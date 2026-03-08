@@ -1,7 +1,7 @@
 {
-  "lastUpdate": "2026-03-08T12:13:25.051Z",
-  "totalCountries": 7,
-  "totalProgrammes": 122542,
+  "lastUpdate": "2026-03-08T12:23:01.325Z",
+  "totalCountries": 89,
+  "totalProgrammes": 871743,
   "countries": [
     {
       "code": "de",
@@ -34,9 +34,419 @@
       "sizeKB": 626
     },
     {
+      "code": "pt",
+      "programmes": 9376,
+      "sizeKB": 547
+    },
+    {
+      "code": "ie",
+      "programmes": 5358,
+      "sizeKB": 579
+    },
+    {
+      "code": "nl",
+      "programmes": 17413,
+      "sizeKB": 221
+    },
+    {
+      "code": "be",
+      "programmes": 23098,
+      "sizeKB": 493
+    },
+    {
+      "code": "lu",
+      "programmes": 22554,
+      "sizeKB": 1098
+    },
+    {
+      "code": "dk",
+      "programmes": 3562,
+      "sizeKB": 469
+    },
+    {
+      "code": "se",
+      "programmes": 10311,
+      "sizeKB": 639
+    },
+    {
+      "code": "no",
+      "programmes": 3892,
+      "sizeKB": 465
+    },
+    {
+      "code": "fi",
+      "programmes": 7430,
+      "sizeKB": 641
+    },
+    {
+      "code": "is",
+      "programmes": 71,
+      "sizeKB": 24
+    },
+    {
+      "code": "pl",
+      "programmes": 40753,
+      "sizeKB": 399
+    },
+    {
+      "code": "cz",
+      "programmes": 23461,
+      "sizeKB": 298
+    },
+    {
+      "code": "sk",
+      "programmes": 7595,
+      "sizeKB": 611
+    },
+    {
+      "code": "hu",
+      "programmes": 17902,
+      "sizeKB": 409
+    },
+    {
+      "code": "ro",
+      "programmes": 12966,
+      "sizeKB": 443
+    },
+    {
+      "code": "bg",
+      "programmes": 3412,
+      "sizeKB": 629
+    },
+    {
+      "code": "gr",
+      "programmes": 3293,
+      "sizeKB": 534
+    },
+    {
+      "code": "hr",
+      "programmes": 24267,
+      "sizeKB": 471
+    },
+    {
+      "code": "si",
+      "programmes": 15136,
+      "sizeKB": 715
+    },
+    {
+      "code": "rs",
+      "programmes": 19490,
+      "sizeKB": 626
+    },
+    {
+      "code": "ba",
+      "programmes": 17987,
+      "sizeKB": 709
+    },
+    {
+      "code": "me",
+      "programmes": 1647,
+      "sizeKB": 445
+    },
+    {
+      "code": "al",
+      "programmes": 8341,
+      "sizeKB": 239
+    },
+    {
+      "code": "tr",
+      "programmes": 4247,
+      "sizeKB": 441
+    },
+    {
+      "code": "ru",
+      "programmes": 22206,
+      "sizeKB": 442
+    },
+    {
+      "code": "ua",
+      "programmes": 2191,
+      "sizeKB": 246
+    },
+    {
+      "code": "lt",
+      "programmes": 841,
+      "sizeKB": 217
+    },
+    {
+      "code": "lv",
+      "programmes": 721,
+      "sizeKB": 238
+    },
+    {
+      "code": "ee",
+      "programmes": 10953,
+      "sizeKB": 891
+    },
+    {
+      "code": "cy",
+      "programmes": 5554,
+      "sizeKB": 466
+    },
+    {
+      "code": "mt",
+      "programmes": 7417,
+      "sizeKB": 596
+    },
+    {
       "code": "us",
       "programmes": 10602,
       "sizeKB": 222
+    },
+    {
+      "code": "ca",
+      "programmes": 6828,
+      "sizeKB": 273
+    },
+    {
+      "code": "mx",
+      "programmes": 4582,
+      "sizeKB": 568
+    },
+    {
+      "code": "br",
+      "programmes": 25378,
+      "sizeKB": 486
+    },
+    {
+      "code": "ar",
+      "programmes": 12589,
+      "sizeKB": 291
+    },
+    {
+      "code": "cl",
+      "programmes": 6844,
+      "sizeKB": 537
+    },
+    {
+      "code": "co",
+      "programmes": 6319,
+      "sizeKB": 493
+    },
+    {
+      "code": "pe",
+      "programmes": 5655,
+      "sizeKB": 638
+    },
+    {
+      "code": "ve",
+      "programmes": 11637,
+      "sizeKB": 870
+    },
+    {
+      "code": "ec",
+      "programmes": 2044,
+      "sizeKB": 340
+    },
+    {
+      "code": "bo",
+      "programmes": 16610,
+      "sizeKB": 304
+    },
+    {
+      "code": "py",
+      "programmes": 1491,
+      "sizeKB": 305
+    },
+    {
+      "code": "uy",
+      "programmes": 668,
+      "sizeKB": 89
+    },
+    {
+      "code": "kr",
+      "programmes": 19291,
+      "sizeKB": 211
+    },
+    {
+      "code": "cn",
+      "programmes": 8027,
+      "sizeKB": 210
+    },
+    {
+      "code": "tw",
+      "programmes": 15062,
+      "sizeKB": 232
+    },
+    {
+      "code": "hk",
+      "programmes": 965,
+      "sizeKB": 135
+    },
+    {
+      "code": "mo",
+      "programmes": 558,
+      "sizeKB": 70
+    },
+    {
+      "code": "in",
+      "programmes": 17581,
+      "sizeKB": 396
+    },
+    {
+      "code": "pk",
+      "programmes": 174,
+      "sizeKB": 77
+    },
+    {
+      "code": "id",
+      "programmes": 3752,
+      "sizeKB": 233
+    },
+    {
+      "code": "my",
+      "programmes": 5234,
+      "sizeKB": 501
+    },
+    {
+      "code": "sg",
+      "programmes": 12451,
+      "sizeKB": 485
+    },
+    {
+      "code": "th",
+      "programmes": 9095,
+      "sizeKB": 242
+    },
+    {
+      "code": "vn",
+      "programmes": 13547,
+      "sizeKB": 260
+    },
+    {
+      "code": "ph",
+      "programmes": 1147,
+      "sizeKB": 142
+    },
+    {
+      "code": "mn",
+      "programmes": 1940,
+      "sizeKB": 239
+    },
+    {
+      "code": "sa",
+      "programmes": 50847,
+      "sizeKB": 464
+    },
+    {
+      "code": "il",
+      "programmes": 5231,
+      "sizeKB": 472
+    },
+    {
+      "code": "qa",
+      "programmes": 960,
+      "sizeKB": 348
+    },
+    {
+      "code": "ae",
+      "programmes": 4898,
+      "sizeKB": 448
+    },
+    {
+      "code": "uz",
+      "programmes": 10617,
+      "sizeKB": 1129
+    },
+    {
+      "code": "ge",
+      "programmes": 15201,
+      "sizeKB": 565
+    },
+    {
+      "code": "eg",
+      "programmes": 5775,
+      "sizeKB": 391
+    },
+    {
+      "code": "za",
+      "programmes": 2129,
+      "sizeKB": 517
+    },
+    {
+      "code": "ng",
+      "programmes": 2514,
+      "sizeKB": 437
+    },
+    {
+      "code": "ke",
+      "programmes": 2249,
+      "sizeKB": 466
+    },
+    {
+      "code": "gh",
+      "programmes": 1898,
+      "sizeKB": 424
+    },
+    {
+      "code": "ma",
+      "programmes": 341,
+      "sizeKB": 55
+    },
+    {
+      "code": "ug",
+      "programmes": 4280,
+      "sizeKB": 442
+    },
+    {
+      "code": "zm",
+      "programmes": 1955,
+      "sizeKB": 457
+    },
+    {
+      "code": "mw",
+      "programmes": 1442,
+      "sizeKB": 341
+    },
+    {
+      "code": "mg",
+      "programmes": 14161,
+      "sizeKB": 396
+    },
+    {
+      "code": "mu",
+      "programmes": 11635,
+      "sizeKB": 401
+    },
+    {
+      "code": "ci",
+      "programmes": 28649,
+      "sizeKB": 356
+    },
+    {
+      "code": "na",
+      "programmes": 1952,
+      "sizeKB": 466
+    },
+    {
+      "code": "au",
+      "programmes": 139,
+      "sizeKB": 38
+    },
+    {
+      "code": "nz",
+      "programmes": 802,
+      "sizeKB": 182
+    },
+    {
+      "code": "nc",
+      "programmes": 12882,
+      "sizeKB": 395
+    },
+    {
+      "code": "jm",
+      "programmes": 1791,
+      "sizeKB": 382
+    },
+    {
+      "code": "do",
+      "programmes": 2550,
+      "sizeKB": 352
+    },
+    {
+      "code": "pr",
+      "programmes": 1389,
+      "sizeKB": 299
     }
   ]
 }
