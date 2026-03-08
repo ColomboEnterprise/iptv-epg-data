@@ -1,6 +1,42 @@
 {
-  "lastUpdate": "2026-03-08T12:10:37.854Z",
-  "totalCountries": 0,
-  "totalProgrammes": 0,
-  "countries": []
+  "lastUpdate": "2026-03-08T12:13:25.051Z",
+  "totalCountries": 7,
+  "totalProgrammes": 122542,
+  "countries": [
+    {
+      "code": "de",
+      "programmes": 20540,
+      "sizeKB": 553
+    },
+    {
+      "code": "at",
+      "programmes": 4460,
+      "sizeKB": 304
+    },
+    {
+      "code": "ch",
+      "programmes": 45910,
+      "sizeKB": 229
+    },
+    {
+      "code": "it",
+      "programmes": 5207,
+      "sizeKB": 514
+    },
+    {
+      "code": "fr",
+      "programmes": 22468,
+      "sizeKB": 227
+    },
+    {
+      "code": "es",
+      "programmes": 13355,
+      "sizeKB": 626
+    },
+    {
+      "code": "us",
+      "programmes": 10602,
+      "sizeKB": 222
+    }
+  ]
 }
