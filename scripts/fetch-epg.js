@@ -7,6 +7,12 @@ const { XMLParser } = require('fast-xml-parser');
 // IPTV-EPG.org – aktuelle EPG-Daten, alle 2 Stunden aktualisiert
 const EPG_BASE_URL = 'https://iptv-epg.org/files';
 
+// Max Programme pro Land – verhindert >100MB Dateien
+const MAX_PROGRAMMES_PER_COUNTRY = 20000;
+
+// Parallele Downloads
+const CONCURRENCY = 5;
+
 const COUNTRIES = [
   // Europa
   'de', 'at', 'ch', 'it', 'fr', 'es', 'pt', 'gb', 'ie',
@@ -34,15 +40,12 @@ const COUNTRIES = [
   'cu', 'jm', 'do', 'pr', 'tt', 'bb'
 ];
 
-// Parallele Downloads (max gleichzeitig)
-const CONCURRENCY = 5;
-
 const OUTPUT_DIR = path.join(__dirname, '../public');
 
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
-  parseAttributeValue: false // String lassen für Datums-Parsing
+  parseAttributeValue: false
 });
 
 async function ensureDir(dir) {
@@ -83,7 +86,7 @@ function parseEPG(xmlText, countryCode) {
       return null;
     }
 
-    const programmes = Array.isArray(result.tv.programme)
+    let programmes = Array.isArray(result.tv.programme)
       ? result.tv.programme
       : [result.tv.programme];
 
@@ -104,20 +107,32 @@ function parseEPG(xmlText, countryCode) {
       }
     }
 
+    const totalFound = programmes.length;
+
+    // Nach Startzeit sortieren (neueste zuerst), dann limitieren
+    if (programmes.length > MAX_PROGRAMMES_PER_COUNTRY) {
+      programmes.sort((a, b) => {
+        const sa = String(a['@_start'] || '');
+        const sb = String(b['@_start'] || '');
+        return sb.localeCompare(sa);
+      });
+      programmes = programmes.slice(0, MAX_PROGRAMMES_PER_COUNTRY);
+      console.log(`   ✂️ ${countryCode}: ${totalFound} → ${MAX_PROGRAMMES_PER_COUNTRY} Programme (limitiert)`);
+    }
+
     console.log(`   🔍 ${programmes.length} Programme, ${Object.keys(channels).length} Kanäle`);
 
-    // KEIN Limit – alle Programme übernehmen
     const simplified = {
       updated: new Date().toISOString(),
       country: countryCode,
       count: programmes.length,
+      totalAvailable: totalFound,
       channelCount: Object.keys(channels).length,
-      channels: channels, // Channel-ID → Name Mapping
+      channels: channels,
       programmes: programmes.map(p => {
         const title = p.title;
         const desc = p.desc;
         const cat = p.category;
-
         return {
           c: String(p['@_channel'] || ''),
           t: String(title && (title['#text'] || title) || 'Unbekannt'),
@@ -144,7 +159,8 @@ async function saveJSON(data, countryCode) {
 
   await fs.writeFile(filePath, jsonString);
   const sizeKB = (jsonString.length / 1024).toFixed(2);
-  console.log(`   💾 ${sizeKB} KB gespeichert (${data.count} Programme, ${data.channelCount} Kanäle)`);
+  const sizeMB = (jsonString.length / 1024 / 1024).toFixed(2);
+  console.log(`   💾 ${sizeMB > 1 ? sizeMB + ' MB' : sizeKB + ' KB'} gespeichert (${data.count} Programme, ${data.channelCount} Kanäle)`);
 
   return {
     country: countryCode,
@@ -174,7 +190,6 @@ async function createIndex(results) {
   console.log(`\n📊 Index erstellt: ${results.length} Länder, ${index.totalChannels} Kanäle, ${index.totalProgrammes} Programme`);
 }
 
-// Parallele Verarbeitung mit Concurrency-Limit
 async function processInBatches(items, batchSize, fn) {
   const results = [];
   for (let i = 0; i < items.length; i += batchSize) {
@@ -208,7 +223,8 @@ async function processCountry(code) {
 async function main() {
   console.log('🚀 EPG-Update gestartet');
   console.log(`📡 Quelle: ${EPG_BASE_URL}`);
-  console.log(`🌍 ${COUNTRIES.length} Länder\n`);
+  console.log(`🌍 ${COUNTRIES.length} Länder`);
+  console.log(`📏 Max ${MAX_PROGRAMMES_PER_COUNTRY} Programme pro Land\n`);
 
   await ensureDir(OUTPUT_DIR);
 
@@ -216,6 +232,15 @@ async function main() {
   const results = allResults.filter(Boolean);
 
   await createIndex(results);
+
+  // Warnung bei großen Dateien
+  const largeFiles = results.filter(r => r.size > 50 * 1024 * 1024);
+  if (largeFiles.length > 0) {
+    console.log(`\n⚠️ Große Dateien (>50MB):`);
+    for (const f of largeFiles) {
+      console.log(`   ${f.country}.json: ${(f.size / 1024 / 1024).toFixed(1)} MB`);
+    }
+  }
 
   console.log(`\n✨ Fertig! ${results.length} von ${COUNTRIES.length} Ländern erfolgreich.`);
   console.log(`📁 Ausgabe: ${OUTPUT_DIR}`);
