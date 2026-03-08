@@ -4,34 +4,18 @@ const path = require('path');
 const fetch = require('node-fetch');
 const { XMLParser } = require('fast-xml-parser');
 
-// KORRIGIERTE URL - verwendet das GitHub Repository direkt
-const EPG_BASE_URL = 'https://raw.githubusercontent.com/iptv-org/epg/master/guides';
+// NEUE URL für globetvapp EPG
+const EPG_BASE_URL = 'https://raw.githubusercontent.com/globetvapp/epg/main';
 
-// Länder mit ihren korrekten Dateinamen
 const COUNTRIES = [
-  { code: 'de', file: 'de.xml' },
-  { code: 'at', file: 'at.xml' },
-  { code: 'ch', file: 'ch.xml' },
-  { code: 'it', file: 'it.xml' },
-  { code: 'fr', file: 'fr.xml' },
-  { code: 'es', file: 'es.xml' },
-  { code: 'gb', file: 'gb.xml' },  // UK ist 'gb'
-  { code: 'us', file: 'us.xml' },
-  { code: 'ca', file: 'ca.xml' },
-  { code: 'nl', file: 'nl.xml' },
-  { code: 'be', file: 'be.xml' },
-  { code: 'se', file: 'se.xml' },
-  { code: 'no', file: 'no.xml' },
-  { code: 'dk', file: 'dk.xml' },
-  { code: 'fi', file: 'fi.xml' },
-  { code: 'pl', file: 'pl.xml' },
-  { code: 'cz', file: 'cz.xml' },
-  { code: 'hu', file: 'hu.xml' },
-  { code: 'ro', file: 'ro.xml' },
-  { code: 'bg', file: 'bg.xml' },
-  { code: 'gr', file: 'gr.xml' },
-  { code: 'tr', file: 'tr.xml' },
-  { code: 'ru', file: 'ru.xml' }
+  { code: 'de', file: 'Germany/germany1.xml' },
+  { code: 'at', file: 'Austria/austria1.xml' },
+  { code: 'ch', file: 'Switzerland/switzerland1.xml' },
+  { code: 'it', file: 'Italy/italy1.xml' },
+  { code: 'fr', file: 'France/france1.xml' },
+  { code: 'es', file: 'Spain/spain1.xml' },
+  { code: 'gb', file: 'Unitedkingdom/uk1.xml' },
+  { code: 'us', file: 'Usa/usa1.xml' }
 ];
 
 const OUTPUT_DIR = path.join(__dirname, '../public');
@@ -55,28 +39,15 @@ async function downloadEPG(country) {
   console.log(`📥 Lade ${country.code} von ${url}...`);
   
   try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; EPG-Bot/1.0)'
-      }
-    });
-    
+    const response = await fetch(url);
     if (!response.ok) {
       console.log(`   ⚠️ ${country.code}: Status ${response.status}`);
       return null;
     }
     
     const text = await response.text();
-    
-    // Prüfen ob es wirklich XML ist
-    if (!text.includes('<tv>')) {
-      console.log(`   ⚠️ ${country.code}: Keine gültigen XML-Daten`);
-      return null;
-    }
-    
     console.log(`   ✅ ${(text.length / 1024 / 1024).toFixed(2)} MB`);
     return text;
-    
   } catch (error) {
     console.log(`   ❌ ${country.code}: ${error.message}`);
     return null;
