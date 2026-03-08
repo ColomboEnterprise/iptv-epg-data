@@ -4,27 +4,44 @@ const path = require('path');
 const fetch = require('node-fetch');
 const { XMLParser } = require('fast-xml-parser');
 
-// Konfiguration - Sie können diese Länder anpassen!
+// KORRIGIERTE URL - verwendet das GitHub Repository direkt
+const EPG_BASE_URL = 'https://raw.githubusercontent.com/iptv-org/epg/master/guides';
+
+// Länder mit ihren korrekten Dateinamen
 const COUNTRIES = [
-  'de', 'at', 'ch', 'it', 'fr', 'es',      // Westeuropa
-  'uk', 'us', 'ca',                         // Englischsprachig
-  'nl', 'be', 'se', 'no', 'dk', 'fi',       // Nordeuropa
-  'pl', 'cz', 'hu', 'ro', 'bg', 'gr',        // Osteuropa
-  'tr', 'ru', 'ua',                          // Ost-/Südeuropa
-  'il', 'sa', 'ae', 'qa', 'kw'               // Naher Osten
+  { code: 'de', file: 'de.xml' },
+  { code: 'at', file: 'at.xml' },
+  { code: 'ch', file: 'ch.xml' },
+  { code: 'it', file: 'it.xml' },
+  { code: 'fr', file: 'fr.xml' },
+  { code: 'es', file: 'es.xml' },
+  { code: 'gb', file: 'gb.xml' },  // UK ist 'gb'
+  { code: 'us', file: 'us.xml' },
+  { code: 'ca', file: 'ca.xml' },
+  { code: 'nl', file: 'nl.xml' },
+  { code: 'be', file: 'be.xml' },
+  { code: 'se', file: 'se.xml' },
+  { code: 'no', file: 'no.xml' },
+  { code: 'dk', file: 'dk.xml' },
+  { code: 'fi', file: 'fi.xml' },
+  { code: 'pl', file: 'pl.xml' },
+  { code: 'cz', file: 'cz.xml' },
+  { code: 'hu', file: 'hu.xml' },
+  { code: 'ro', file: 'ro.xml' },
+  { code: 'bg', file: 'bg.xml' },
+  { code: 'gr', file: 'gr.xml' },
+  { code: 'tr', file: 'tr.xml' },
+  { code: 'ru', file: 'ru.xml' }
 ];
 
 const OUTPUT_DIR = path.join(__dirname, '../public');
-const EPG_BASE_URL = 'https://iptv-org.github.io/epg/guides';
 
-// XML Parser
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   parseAttributeValue: true
 });
 
-// Hilfsfunktion: Verzeichnis erstellen
 async function ensureDir(dir) {
   try {
     await fs.mkdir(dir, { recursive: true });
@@ -33,50 +50,59 @@ async function ensureDir(dir) {
   }
 }
 
-// EPG für ein Land herunterladen
 async function downloadEPG(country) {
-  const url = `${EPG_BASE_URL}/${country}.xml`;
-  console.log(`📥 Lade ${country}...`);
+  const url = `${EPG_BASE_URL}/${country.file}`;
+  console.log(`📥 Lade ${country.code} von ${url}...`);
   
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; EPG-Bot/1.0)'
+      }
+    });
+    
     if (!response.ok) {
-      console.log(`   ⚠️ ${country}: Status ${response.status}`);
+      console.log(`   ⚠️ ${country.code}: Status ${response.status}`);
       return null;
     }
     
     const text = await response.text();
+    
+    // Prüfen ob es wirklich XML ist
+    if (!text.includes('<tv>')) {
+      console.log(`   ⚠️ ${country.code}: Keine gültigen XML-Daten`);
+      return null;
+    }
+    
     console.log(`   ✅ ${(text.length / 1024 / 1024).toFixed(2)} MB`);
     return text;
+    
   } catch (error) {
-    console.log(`   ❌ ${country}: ${error.message}`);
+    console.log(`   ❌ ${country.code}: ${error.message}`);
     return null;
   }
 }
 
-// EPG parsen und optimieren
-function parseEPG(xmlText, country) {
+function parseEPG(xmlText, countryCode) {
   try {
     const result = parser.parse(xmlText);
     
     if (!result.tv || !result.tv.programme) {
-      console.log(`   ⚠️ ${country}: Keine Programme`);
+      console.log(`   ⚠️ ${countryCode}: Keine Programme`);
       return null;
     }
     
-    // Programme in Array konvertieren (falls nur eines)
     const programmes = Array.isArray(result.tv.programme) 
       ? result.tv.programme 
       : [result.tv.programme];
     
     console.log(`   🔍 ${programmes.length} Programme gefunden`);
     
-    // Vereinfachtes Format
     const simplified = {
       updated: new Date().toISOString(),
-      country: country,
+      country: countryCode,
       count: programmes.length,
-      programmes: programmes.slice(0, 1000).map(p => ({  // Max. 1000 pro Land
+      programmes: programmes.slice(0, 2000).map(p => ({
         c: p['@_channel'] || '',
         t: (p.title && (p.title['#text'] || p.title)) || 'Unbekannt',
         s: p['@_start'] || '',
@@ -88,29 +114,27 @@ function parseEPG(xmlText, country) {
     
     return simplified;
   } catch (error) {
-    console.log(`   ❌ ${country}: Parse-Fehler - ${error.message}`);
+    console.log(`   ❌ ${countryCode}: Parse-Fehler - ${error.message}`);
     return null;
   }
 }
 
-// JSON speichern
-async function saveJSON(data, country) {
+async function saveJSON(data, countryCode) {
   if (!data) return null;
   
-  const filePath = path.join(OUTPUT_DIR, `${country}.json`);
+  const filePath = path.join(OUTPUT_DIR, `${countryCode}.json`);
   const jsonString = JSON.stringify(data);
   
   await fs.writeFile(filePath, jsonString);
   console.log(`   💾 ${(jsonString.length / 1024).toFixed(2)} KB gespeichert`);
   
   return {
-    country: country,
+    country: countryCode,
     count: data.count || 0,
     size: jsonString.length
   };
 }
 
-// Index-Datei erstellen
 async function createIndex(results) {
   const index = {
     lastUpdate: new Date().toISOString(),
@@ -128,7 +152,6 @@ async function createIndex(results) {
   console.log(`\n📊 Index-Datei erstellt mit ${results.length} Ländern`);
 }
 
-// Hauptfunktion
 async function main() {
   console.log('🚀 EPG-Update gestartet\n');
   
@@ -142,18 +165,18 @@ async function main() {
       const xmlText = await downloadEPG(country);
       if (!xmlText) continue;
       
-      const data = parseEPG(xmlText, country);
+      const data = parseEPG(xmlText, country.code);
       if (!data) continue;
       
-      const result = await saveJSON(data, country);
+      const result = await saveJSON(data, country.code);
       if (result) {
         results.push(result);
         successCount++;
       }
       
-      console.log(''); // Leerzeile für Lesbarkeit
+      console.log('');
     } catch (error) {
-      console.log(`   ❌ ${country}: ${error.message}\n`);
+      console.log(`   ❌ ${country.code}: ${error.message}\n`);
     }
   }
   
