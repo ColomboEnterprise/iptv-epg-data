@@ -1,0 +1,13 @@
+{
+  "name": "iptv-epg-data",
+  "version": "1.0.0",
+  "description": "Automatische EPG-Daten für IPTV-Player",
+  "main": "scripts/fetch-epg.js",
+  "scripts": {
+    "build": "node scripts/fetch-epg.js"
+  },
+  "dependencies": {
+    "node-fetch": "^2.7.0",
+    "fast-xml-parser": "^4.3.2"
+  }
+}
