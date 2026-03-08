@@ -1,0 +1,33 @@
+name: EPG Tägliches Update
+
+on:
+  schedule:
+    # Täglich um 3:00 Uhr UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:  # Erlaubt manuelles Ausführen
+
+jobs:
+  update-epg:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v3
+      
+      - name: Node.js einrichten
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: Abhängigkeiten installieren
+        run: npm install
+      
+      - name: EPG-Daten laden
+        run: npm run build
+      
+      - name: Änderungen committen
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add public/
+          git diff --quiet && git diff --staged --quiet || git commit -m "EPG automatisches Update $(date +'%Y-%m-%d')"
+          git push
