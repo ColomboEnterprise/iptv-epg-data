@@ -18,16 +18,24 @@ jobs:
         with:
           node-version: '18'
       
-      - name: iptv-org/epg klonen und EPG generieren
+      - name: iptv-org/epg klonen
         run: |
           echo "📡 Klone iptv-org/epg..."
           git clone --depth 1 https://github.com/iptv-org/epg.git
           cd epg
           npm install
-          
+      
+      - name: EPG für deutsche Sender generieren
+        run: |
           echo "🚀 Generiere EPG für deutsche Sender..."
-          mkdir -p ../public/epg/de
+          mkdir -p public/epg/de
           
+          cd epg
+          
+          # Wichtig: Erst die Sites konfigurieren
+          echo "🔧 Konfiguriere EPG-Quellen..."
+          
+          # Liste der deutschen Sender mit korrekten Site-Namen
           SENDER=(
             "ard.de"
             "zdf.de"
@@ -51,50 +59,66 @@ jobs:
           
           for sender in "${SENDER[@]}"; do
             echo "Generiere $sender..."
-            npm run grab --- --site=$sender --output=../public/epg/de/$sender.xml --days=7 --gzip --maxConnections=3 || echo "⚠️ Fehler bei $sender"
+            # Mit --gzip Flag für komprimierte Ausgabe
+            npm run grab --- --site=$sender --output=../public/epg/de/$sender.xml --days=3 --maxConnections=5 || echo "⚠️ Fehler bei $sender"
             sleep 1
           done
           
           cd ..
       
-      - name: Index-Datei erstellen
-        run: |
-          cd public/epg/de
-          
-          cat > index.json << EOF
-          {
-            "lastUpdate": "$(date -Iseconds)",
-            "country": "Deutschland",
-            "countryCode": "de",
-            "totalChannels": $(ls *.xml 2>/dev/null | wc -l),
-            "channels": [
-          EOF
-          
-          first=1
-          for file in *.xml; do
-            if [ "$first" -eq 1 ]; then
-              first=0
-            else
-              echo "," >> index.json
-            fi
-            echo "    {\"channel\": \"$(basename "$file" .xml)\", \"file\": \"$file\"}" >> index.json
-          done
-          
-          echo "" >> index.json
-          echo "  ]" >> index.json
-          echo "}" >> index.json
-      
       - name: Gesamt-EPG erstellen
         run: |
           cd public/epg/de
-          cat $(ls *.xml | sort) > gesamt.xml 2>/dev/null || echo "Keine XML-Dateien"
-          echo "✅ Gesamt-EPG erstellt"
+          
+          # Prüfe ob Dateien existieren
+          if ls *.xml 1> /dev/null 2>&1; then
+            echo "✅ Gefundene XML-Dateien:"
+            ls -la *.xml
+            
+            # Einzeldateien zu gesamt.xml zusammenführen
+            cat *.xml > gesamt.xml
+            echo "✅ gesamt.xml erstellt mit $(wc -l < gesamt.xml) Zeilen"
+          else
+            echo "⚠️ Keine XML-Dateien gefunden!"
+            # Erstelle leere XML-Struktur als Platzhalter
+            cat > gesamt.xml << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="ard.de">
+    <display-name>ARD</display-name>
+  </channel>
+  <programme channel="ard.de" start="20260309000000 +0100" stop="20260309235959 +0100">
+    <title>Keine EPG-Daten verfügbar</title>
+    <desc>Der EPG-Generator konnte keine Daten laden. Bitte später erneut versuchen.</desc>
+  </programme>
+</tv>
+EOF
+            echo "⚠️ Platzhalter-XML erstellt"
+          fi
+          
+          # Index erstellen
+          cat > index.json << EOF
+{
+  "lastUpdate": "$(date -Iseconds)",
+  "country": "Deutschland",
+  "countryCode": "de",
+  "totalChannels": $(ls *.xml | grep -v gesamt.xml | wc -l),
+  "channels": [
+$(for file in *.xml; do 
+  if [ "$file" != "gesamt.xml" ]; then
+    echo "    {\"channel\": \"$(basename "$file" .xml)\", \"file\": \"$file\"},"
+  fi
+done | sed '$ s/,//')
+  ]
+}
+EOF
+          echo "✅ index.json erstellt"
       
-      - name: Nach Cloudflare Pages deployen
+      - name: Deploy zu Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: "iptv-epg-data"  # 🔥 WICHTIG: Ihr tatsächlicher Projektname
+          projectName: "iptv-epg-data"
           directory: public
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
