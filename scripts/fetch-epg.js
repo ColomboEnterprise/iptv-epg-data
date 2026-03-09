@@ -4,13 +4,60 @@ const path = require('path');
 const fetch = require('node-fetch');
 const { XMLParser } = require('fast-xml-parser');
 
-// Mehrere EPG-Quellen für Redundanz
+// EPG-Quellen (Stand März 2026)
 const EPG_SOURCES = [
-  'https://iptv-org.github.io/epg/guides',      // iptv-org (täglich aktualisiert)
-  'https://iptv-epg.pages.dev/files',            // Cloudflare Pages Mirror
-  'https://iptv-epg-data.pages.dev',             // Ihr eigenes Repository
-  'https://epg.pw'                               // epg.pw (Alternative)
+  'https://iptv-org.github.io/epg/guides',           // iptv-org (primär)
+  'https://epg.pw/epg',                               // epg.pw (Fallback 1)
+  'https://raw.githubusercontent.com/iptv-org/epg/master/guides' // GitHub raw (Fallback 2)
 ];
+
+// Ländercode-Mapping für unterschiedliche Quellen
+const COUNTRY_CODE_MAP = {
+  'gb': 'uk',      // Großbritannien: iptv-org verwendet 'uk' statt 'gb'
+  'gr': 'el',      // Griechenland: 'el' statt 'gr'
+  'il': 'he',      // Israel: 'he' statt 'il'
+  'kr': 'ko',      // Südkorea: 'ko' statt 'kr'
+  'cn': 'zh',      // China: 'zh' statt 'cn'
+  'jp': 'ja',      // Japan: 'ja' statt 'jp'
+  'sa': 'ar',      // Saudi-Arabien: 'ar' statt 'sa'
+  'ae': 'ar',      // VAE: auch 'ar'
+  'eg': 'ar',      // Ägypten: auch 'ar'
+  'ua': 'uk',      // Ukraine: 'ua' bleibt 'ua', aber Achtung: nicht mit 'uk' verwechseln!
+  'by': 'be',      // Belarus: 'be' (Belarusian)
+  'kz': 'kk',      // Kasachstan: 'kk'
+  'uz': 'uz',      // Usbekistan: 'uz'
+  'ir': 'fa',      // Iran: 'fa' (Persian)
+  'iq': 'ar',      // Irak: 'ar'
+  'sy': 'ar',      // Syrien: 'ar'
+  'jo': 'ar',      // Jordanien: 'ar'
+  'lb': 'ar',      // Libanon: 'ar'
+  'ps': 'ar',      // Palästina: 'ar'
+  'ma': 'ar',      // Marokko: 'ar'
+  'dz': 'ar',      // Algerien: 'ar'
+  'tn': 'ar',      // Tunesien: 'ar'
+  'ly': 'ar',      // Libyen: 'ar'
+  'sd': 'ar',      // Sudan: 'ar'
+  'pk': 'ur',      // Pakistan: 'ur' (Urdu)
+  'bd': 'bn',      // Bangladesch: 'bn' (Bengali)
+  'lk': 'si',      // Sri Lanka: 'si' (Sinhala)
+  'np': 'ne',      // Nepal: 'ne' (Nepali)
+  'th': 'th',      // Thailand: 'th'
+  'vn': 'vi',      // Vietnam: 'vi'
+  'kh': 'km',      // Kambodscha: 'km' (Khmer)
+  'mm': 'my',      // Myanmar: 'my' (Burmesisch)
+  'my': 'ms',      // Malaysia: 'ms' (Malay)
+  'id': 'id',      // Indonesien: 'id'
+  'ph': 'tl',      // Philippinen: 'tl' (Tagalog)
+  'ge': 'ka',      // Georgien: 'ka' (Georgian)
+  'am': 'hy',      // Armenien: 'hy' (Armenian)
+  'az': 'az',      // Aserbaidschan: 'az'
+  'ee': 'et',      // Estland: 'et'
+  'lv': 'lv',      // Lettland: 'lv'
+  'lt': 'lt',      // Litauen: 'lt'
+  'mt': 'mt',      // Malta: 'mt'
+  'cy': 'el',      // Zypern: 'el'
+  'is': 'is'       // Island: 'is'
+};
 
 // Max Programme pro Land – verhindert >100MB Dateien
 const MAX_PROGRAMMES_PER_COUNTRY = 20000;
@@ -18,8 +65,15 @@ const MAX_PROGRAMMES_PER_COUNTRY = 20000;
 // Parallele Downloads
 const CONCURRENCY = 3;
 
-// Nur relevante Länder (die in Ihrer App vorkommen)
-const COUNTRIES = [
+// Länder die temporär übersprungen werden (weil oft 404)
+const SKIP_COUNTRIES = [
+  // Diese Länder haben oft keine EPG-Daten
+  'ba', 'ec', 'bo', 'py', 'uy',
+  'tt', 'bb', 'jm', 'ht', 'do', 'pr', 'cu',
+  'fj', 'pg', 'is', 'mt', 'cy'
+];
+
+const ALL_COUNTRIES = [
   // Europa
   'de', 'at', 'ch', 'it', 'fr', 'es', 'pt', 'gb', 'ie',
   'nl', 'be', 'lu', 'dk', 'se', 'no', 'fi', 'is',
@@ -31,17 +85,23 @@ const COUNTRIES = [
   // Südamerika
   'br', 'ar', 'cl', 'co', 'pe', 've', 'ec', 'bo', 'py', 'uy',
   // Asien
-  'jp', 'kr', 'cn', 'tw', 'hk', 'in', 'pk', 'bd', 'lk', 'np',
+  'jp', 'kr', 'cn', 'tw', 'hk',
+  'in', 'pk', 'bd', 'lk', 'np',
   'id', 'my', 'sg', 'th', 'vn', 'ph', 'mm', 'kh',
   'ir', 'iq', 'sa', 'sy', 'jo', 'lb', 'il', 'ps',
-  'kw', 'bh', 'qa', 'ae', 'om', 'uz', 'kz', 'ge', 'az', 'am',
+  'kw', 'bh', 'qa', 'ae', 'om',
+  'uz', 'kz', 'ge', 'az', 'am',
   // Afrika
   'eg', 'za', 'ng', 'ke', 'gh', 'ma', 'dz', 'tn',
+  'ly', 'sd', 'et', 'ug', 'tz', 'cm', 'sn', 'ci',
   // Ozeanien
-  'au', 'nz',
-  // International
-  'int'
+  'au', 'nz', 'fj',
+  // Karibik
+  'cu', 'jm', 'do', 'pr', 'tt', 'bb'
 ];
+
+// Filtere übersprungene Länder
+const COUNTRIES = ALL_COUNTRIES.filter(c => !SKIP_COUNTRIES.includes(c));
 
 const OUTPUT_DIR = path.join(__dirname, '../public');
 
@@ -53,6 +113,43 @@ const parser = new XMLParser({
   isArray: (name) => ['programme', 'channel'].includes(name)
 });
 
+function getSourceUrl(source, code) {
+  // Für iptv-org: Mapping beachten
+  const mappedCode = COUNTRY_CODE_MAP[code] || code;
+  
+  if (source.includes('iptv-org') || source.includes('github')) {
+    return `${source}/${mappedCode}.xml`;
+  } else if (source.includes('epg.pw')) {
+    return `${source}/${code}.xml`;
+  } else {
+    return `${source}/epg-${code}.xml`;
+  }
+}
+
+function parseDate(dateStr) {
+  if (!dateStr) return null;
+  
+  // Formate: "20251231000000 +0000" oder "20251231000000"
+  const clean = dateStr.split(' ')[0].trim();
+  
+  if (clean.length === 14) {
+    const year = clean.slice(0, 4);
+    const month = clean.slice(4, 6);
+    const day = clean.slice(6, 8);
+    const hour = clean.slice(8, 10);
+    const min = clean.slice(10, 12);
+    const sec = clean.slice(12, 14);
+    
+    // Monat muss zwischen 1-12 sein
+    const m = parseInt(month);
+    if (m < 1 || m > 12) return null;
+    
+    return new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}Z`);
+  }
+  
+  return null;
+}
+
 async function ensureDir(dir) {
   await fs.mkdir(dir, { recursive: true });
 }
@@ -60,21 +157,16 @@ async function ensureDir(dir) {
 async function downloadEPG(code) {
   // Versuche alle Quellen
   for (const source of EPG_SOURCES) {
-    let url;
-    if (source.includes('iptv-org')) {
-      url = `${source}/${code}.xml`;
-    } else if (source.includes('epg.pw')) {
-      url = `${source}/epg/${code}.xml`;
-    } else {
-      url = `${source}/epg-${code}.xml`;
-    }
-
+    const url = getSourceUrl(source, code);
     console.log(`📥 Lade ${code} von ${url}...`);
 
     try {
       const response = await fetch(url, {
-        headers: { 'User-Agent': 'IPTV-EPG-Fetcher/1.0' },
-        timeout: 30000
+        headers: { 
+          'User-Agent': 'IPTV-EPG-Fetcher/1.0',
+          'Accept-Encoding': 'gzip'
+        },
+        timeout: 15000 // 15 Sekunden
       });
 
       if (!response.ok) {
@@ -89,8 +181,8 @@ async function downloadEPG(code) {
         continue;
       }
 
-      const sizeMB = (text.length / 1024 / 1024).toFixed(2);
-      console.log(`   ✅ ${sizeMB} MB von ${source}`);
+      const sizeKB = (text.length / 1024).toFixed(2);
+      console.log(`   ✅ ${sizeKB} KB von ${source}`);
       return { text, source };
     } catch (error) {
       console.log(`   ❌ ${code} von ${source}: ${error.message}`);
@@ -125,7 +217,7 @@ function parseEPG(xmlText, countryCode) {
         const id = ch.id || '';
         const displayName = ch['display-name'];
         const name = displayName 
-          ? (typeof displayName === 'string' ? displayName : displayName[0] || '')
+          ? (typeof displayName === 'string' ? displayName : (displayName[0] || displayName['#text'] || ''))
           : id;
         if (id) channels[id] = String(name);
       }
@@ -136,27 +228,13 @@ function parseEPG(xmlText, countryCode) {
     // Filter: Nur Programme der nächsten 7 Tage
     const now = new Date();
     const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-    const parseDate = (dateStr) => {
-      if (!dateStr) return null;
-      const clean = dateStr.split(' ')[0];
-      if (clean.length === 14) {
-        const year = clean.slice(0, 4);
-        const month = clean.slice(4, 6);
-        const day = clean.slice(6, 8);
-        const hour = clean.slice(8, 10);
-        const min = clean.slice(10, 12);
-        const sec = clean.slice(12, 14);
-        return new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}Z`);
-      }
-      return null;
-    };
+    const sevenDaysAgo = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000); // Auch 1 Tag zurück für laufende
 
     // Nach Datum filtern
     programmes = programmes
       .filter(p => {
         const start = parseDate(p.start || p['start']);
-        return start && start <= sevenDaysLater;
+        return start && start >= sevenDaysAgo && start <= sevenDaysLater;
       })
       .sort((a, b) => {
         const sa = String(a.start || a['start'] || '');
@@ -170,7 +248,12 @@ function parseEPG(xmlText, countryCode) {
       console.log(`   ✂️ ${countryCode}: ${totalFound} → ${MAX_PROGRAMMES_PER_COUNTRY} Programme`);
     }
 
-    console.log(`   🔍 ${programmes.length} Programme, ${Object.keys(channels).length} Kanäle`);
+    if (programmes.length === 0) {
+      console.log(`   ⚠️ ${countryCode}: Keine aktuellen Programme (nur ${totalFound} insgesamt)`);
+      return null;
+    }
+
+    console.log(`   🔍 ${programmes.length} aktuelle Programme, ${Object.keys(channels).length} Kanäle`);
 
     return {
       updated: new Date().toISOString(),
@@ -181,11 +264,11 @@ function parseEPG(xmlText, countryCode) {
       channels: channels,
       programmes: programmes.map(p => ({
         c: String(p.channel || p['channel'] || ''),
-        t: String(p.title || 'Unbekannt'),
+        t: String(p.title || 'Unbekannt').substring(0, 200),
         s: String(p.start || p['start'] || ''),
         e: String(p.stop || p['stop'] || ''),
-        d: String(p.desc || ''),
-        cat: String(p.category || '')
+        d: String(p.desc || '').substring(0, 500),
+        cat: String(p.category || '').substring(0, 100)
       }))
     };
   } catch (error) {
@@ -229,16 +312,26 @@ async function createIndex(results) {
 
   const indexPath = path.join(OUTPUT_DIR, 'index.json');
   await fs.writeFile(indexPath, JSON.stringify(index, null, 2));
-  console.log(`\n📊 Index erstellt: ${results.length} Länder`);
+  console.log(`\n📊 Index erstellt: ${results.length} Länder, ${index.totalChannels} Kanäle, ${index.totalProgrammes} Programme`);
 }
 
 async function processInBatches(items, batchSize, fn) {
   const results = [];
   for (let i = 0; i < items.length; i += batchSize) {
     const batch = items.slice(i, i + batchSize);
-    console.log(`\n📦 Batch ${Math.floor(i/batchSize)+1}/${Math.ceil(items.length/batchSize)}`);
-    const batchResults = await Promise.all(batch.map(fn));
+    console.log(`\n📦 Batch ${Math.floor(i/batchSize)+1}/${Math.ceil(items.length/batchSize)} (${batch.join(', ')})`);
+    
+    const batchResults = await Promise.all(batch.map(code => fn(code).catch(e => {
+      console.log(`   ❌ ${code}: ${e.message}`);
+      return null;
+    })));
+    
     results.push(...batchResults.filter(Boolean));
+    
+    // Kurze Pause zwischen Batches
+    if (i + batchSize < items.length) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
   }
   return results;
 }
@@ -261,8 +354,9 @@ async function processCountry(code) {
 async function main() {
   console.log('🚀 EPG-Update gestartet');
   console.log(`📡 Quellen: ${EPG_SOURCES.length} verfügbar`);
-  console.log(`🌍 ${COUNTRIES.length} Länder`);
-  console.log(`📏 Max ${MAX_PROGRAMMES_PER_COUNTRY} Programme/Land\n`);
+  console.log(`🌍 ${COUNTRIES.length} Länder (${SKIP_COUNTRIES.length} übersprungen)`);
+  console.log(`📏 Max ${MAX_PROGRAMMES_PER_COUNTRY} Programme/Land`);
+  console.log(`⚡ Parallele Downloads: ${CONCURRENCY}\n`);
 
   await ensureDir(OUTPUT_DIR);
 
@@ -271,6 +365,12 @@ async function main() {
   if (results.length > 0) {
     await createIndex(results);
     console.log(`\n✨ Fertig! ${results.length} Länder erfolgreich.`);
+    
+    // Zeige fehlgeschlagene Länder
+    const failed = COUNTRIES.length - results.length;
+    if (failed > 0) {
+      console.log(`⚠️ ${failed} Länder fehlgeschlagen.`);
+    }
   } else {
     console.log('\n❌ Keine Daten konnten geladen werden!');
   }
