@@ -3,20 +3,23 @@ const fs = require('fs').promises;
 const path = require('path');
 const fetch = require('node-fetch');
 const { XMLParser } = require('fast-xml-parser');
+const zlib = require('zlib');
+const { promisify } = require('util');
+const gunzip = promisify(zlib.gunzip);
 
-// FUNKTIONIERENDE EPG-Quellen (Stand März 2026)
+// EPG-QUELLEN - Basierend auf Ihrer funktionierenden Quelle
 const EPG_SOURCES = [
-  { 
-    url: 'https://epg.zsdc.eu.org/t.xml.gz',
-    name: 'zsdc.eu.org - 130+ Kanäle, 7 Tage Voraus'
-  },
-  { 
-    url: 'http://epg.one/epg.xml.gz',
-    name: 'epg.one - Große Abdeckung'
-  },
-  { 
+  // ✅ IHRE FUNKTIONIERENDE QUELLE
+  {
     url: 'https://iptvx.one/epg/epg.xml.gz',
-    name: 'iptvx.one - Gute deutsche Abdeckung'
+    name: 'iptvx.one - Europa (primär)',
+    type: 'gz'
+  },
+  // ⚠️ Backup falls die primäre Quelle ausfällt
+  {
+    url: 'https://raw.githubusercontent.com/evo-lua/EPG/main/guide.xml',
+    name: 'GitHub Community EPG (Backup)',
+    type: 'xml'
   }
 ];
 
@@ -30,77 +33,102 @@ const parser = new XMLParser({
   isArray: (name) => ['programme', 'channel'].includes(name)
 });
 
+/**
+ * Erstellt das Ausgabeverzeichnis falls es nicht existiert
+ */
 async function ensureDir(dir) {
   await fs.mkdir(dir, { recursive: true });
 }
 
-async function downloadEPG() {
-  let lastError = null;
+/**
+ * Lädt eine EPG-Quelle herunter und parst sie
+ */
+async function downloadAndParseEPG(source) {
+  console.log(`\n   📡 Quelle: ${source.name}`);
+  console.log(`   URL: ${source.url}`);
   
-  for (const source of EPG_SOURCES) {
-    console.log(`\n📡 Versuche Quelle: ${source.name}`);
-    console.log(`   URL: ${source.url}`);
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000); // 60 Sekunden Timeout
+
+    const response = await fetch(source.url, {
+      headers: { 
+        'User-Agent': 'Mozilla/5.0 (compatible; EPG-Fetcher/2.0; +https://github.com/ihr-repo)',
+        'Accept': 'application/xml, text/xml, application/gzip, */*'
+      },
+      signal: controller.signal,
+      timeout: 30000
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      console.log(`   ⚠️ HTTP ${response.status} - ${response.statusText}`);
+      return null;
+    }
+
+    console.log(`   ⬇️ Lade Daten (${response.headers.get('content-length') || 'unbekannt'} Bytes)...`);
     
-    try {
-      const response = await fetch(source.url, {
-        headers: { 
-          'User-Agent': 'IPTV-EPG-Fetcher/1.0',
-          'Accept-Encoding': 'gzip'
-        },
-        timeout: 30000
-      });
+    const buffer = await response.buffer();
+    let xmlText;
 
-      if (!response.ok) {
-        console.log(`   ⚠️ HTTP ${response.status}`);
-        lastError = `HTTP ${response.status}`;
-        continue;
-      }
-
-      console.log(`   ⬇️ Lade Daten...`);
-      
-      // Gzip-Dekompression
-      const buffer = await response.buffer();
-      const zlib = require('zlib');
-      let xmlText;
-      
+    // GZIP Dekompression falls nötig
+    if (source.type === 'gz' || source.url.endsWith('.gz')) {
       try {
-        xmlText = zlib.gunzipSync(buffer).toString();
+        const decompressed = await gunzip(buffer);
+        xmlText = decompressed.toString('utf-8');
         console.log(`   ✅ Dekomprimiert: ${(xmlText.length / 1024 / 1024).toFixed(2)} MB`);
       } catch (e) {
-        // Falls nicht komprimiert
-        xmlText = buffer.toString();
-        console.log(`   ✅ Ungzip: ${(xmlText.length / 1024 / 1024).toFixed(2)} MB`);
+        console.log(`   ⚠️ Kein gültiges GZIP, versuche als normaler Text: ${e.message}`);
+        xmlText = buffer.toString('utf-8');
       }
-
-      console.log(`   🔍 Parse XML...`);
-      const data = parseEPG(xmlText, source.name);
-      
-      if (data && data.programmes.length > 0) {
-        console.log(`   ✅ Erfolg mit ${source.name}!`);
-        return data;
-      }
-      
-    } catch (error) {
-      console.log(`   ❌ Fehler: ${error.message}`);
-      lastError = error.message;
+    } else {
+      xmlText = buffer.toString('utf-8');
+      console.log(`   ✅ Geladen: ${(xmlText.length / 1024 / 1024).toFixed(2)} MB`);
     }
+
+    // XML parsen
+    console.log(`   🔍 Parse XML...`);
+    const data = parseEPG(xmlText, source.name);
+    
+    if (data && data.programmes.length > 0) {
+      console.log(`   ✅ ${data.programmes.length} Programme gefunden!`);
+      return data;
+    } else {
+      console.log(`   ⚠️ Keine Programme in der XML gefunden`);
+      return null;
+    }
+    
+  } catch (error) {
+    if (error.name === 'AbortError' || error.code === 'ETIMEDOUT') {
+      console.log(`   ⏱️ Timeout - Verbindung abgebrochen`);
+    } else if (error.code === 'ENOTFOUND') {
+      console.log(`   🌐 Domain nicht gefunden - Server nicht erreichbar`);
+    } else {
+      console.log(`   ❌ Fehler: ${error.message}`);
+    }
+    return null;
   }
-  
-  throw new Error(`Alle Quellen fehlgeschlagen. Letzter Fehler: ${lastError}`);
 }
 
+/**
+ * Parst XMLTV in unser internes Format
+ */
 function parseEPG(xmlText, sourceName) {
   try {
     const result = parser.parse(xmlText);
     
     if (!result.tv) {
-      throw new Error('Kein <tv> Element gefunden');
+      console.log('   ⚠️ Kein <tv> Element in der XML gefunden');
+      return null;
     }
 
+    // Programme sammeln
     const programmes = Array.isArray(result.tv.programme) 
       ? result.tv.programme 
       : (result.tv.programme ? [result.tv.programme] : []);
 
+    // Kanäle sammeln
     const channels = {};
     if (result.tv.channel) {
       const chList = Array.isArray(result.tv.channel) 
@@ -124,16 +152,17 @@ function parseEPG(xmlText, sourceName) {
       }
     }
 
-    console.log(`   📊 ${programmes.length} Programme, ${Object.keys(channels).length} Kanäle`);
+    console.log(`   📊 Rohdaten: ${programmes.length} Programme, ${Object.keys(channels).length} Kanäle`);
 
-    // Nächste 7 Tage filtern
-    const now = new Date();
-    const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    
+    // Datum parsen (verschiedene Formate)
     const parseDate = (dateStr) => {
       if (!dateStr) return null;
-      const clean = dateStr.split(' ')[0].trim();
-      if (clean.length === 14) {
+      
+      // Entferne Zeitzone und Whitespace
+      let clean = String(dateStr).split(' ')[0].trim().split('+')[0].split('-')[0];
+      
+      // XMLTV Format: 20260309143000
+      if (clean.length >= 14) {
         const year = clean.slice(0, 4);
         const month = clean.slice(4, 6);
         const day = clean.slice(6, 8);
@@ -142,9 +171,16 @@ function parseEPG(xmlText, sourceName) {
         const sec = clean.slice(12, 14);
         return new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}Z`);
       }
-      return null;
+      
+      // Fallback: ISO String
+      const date = new Date(dateStr);
+      return isNaN(date.getTime()) ? null : date;
     };
 
+    // Nur Programme der nächsten 7 Tage behalten
+    const now = new Date();
+    const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    
     const filteredProgrammes = programmes
       .filter(p => {
         const start = parseDate(p.start || p['start']);
@@ -152,14 +188,14 @@ function parseEPG(xmlText, sourceName) {
       })
       .map(p => ({
         c: String(p.channel || p['channel'] || '').trim(),
-        t: String(p.title || 'Unbekannt').substring(0, 200),
+        t: String(p.title || p['title'] || 'Unbekannt').substring(0, 200),
         s: String(p.start || p['start'] || ''),
         e: String(p.stop || p['stop'] || ''),
-        d: String(p.desc || '').substring(0, 500),
-        cat: String(p.category || '').substring(0, 100)
+        d: String(p.desc || p['desc'] || '').substring(0, 500),
+        cat: String(p.category || p['category'] || '').substring(0, 100)
       }));
 
-    console.log(`   🎯 ${filteredProgrammes.length} aktuelle Programme (nächste 7 Tage)`);
+    console.log(`   🎯 Nach Filterung: ${filteredProgrammes.length} aktuelle Programme (7 Tage)`);
 
     return {
       updated: new Date().toISOString(),
@@ -176,52 +212,166 @@ function parseEPG(xmlText, sourceName) {
   }
 }
 
+/**
+ * Merged mehrere EPG-Datenquellen und entfernt Duplikate
+ */
+function mergeEPGData(dataArray) {
+  if (!dataArray || dataArray.length === 0) return null;
+  
+  console.log(`\n🔄 Merge ${dataArray.length} EPG-Quellen...`);
+  
+  const mergedProgrammes = [];
+  const mergedChannels = {};
+  const seenProgrammes = new Set(); // Für Duplikaterkennung
+  
+  for (const data of dataArray) {
+    if (!data || !data.programmes) continue;
+    
+    console.log(`   📥 ${data.source}: ${data.programmes.length} Programme, ${data.totalChannels} Kanäle`);
+    
+    // Channels mergen
+    Object.assign(mergedChannels, data.channels);
+    
+    // Programme mergen (mit Duplikaterkennung)
+    for (const prog of data.programmes) {
+      // Eindeutiger Schlüssel: Kanal + Startzeit + Titel
+      const key = `${prog.c}|${prog.s}|${prog.t}`;
+      if (!seenProgrammes.has(key)) {
+        seenProgrammes.add(key);
+        mergedProgrammes.push(prog);
+      }
+    }
+  }
+  
+  console.log(`\n📊 Merge-Ergebnis:`);
+  console.log(`   📺 Kanäle insgesamt: ${Object.keys(mergedChannels).length}`);
+  console.log(`   📺 Programme insgesamt: ${mergedProgrammes.length}`);
+  console.log(`   🗑️ Entfernte Duplikate: ${dataArray.reduce((sum, d) => sum + (d?.programmes?.length || 0), 0) - mergedProgrammes.length}`);
+  
+  return {
+    updated: new Date().toISOString(),
+    source: `Merged from ${dataArray.length} sources`,
+    programmes: mergedProgrammes,
+    channels: mergedChannels,
+    totalProgrammes: mergedProgrammes.length,
+    totalChannels: Object.keys(mergedChannels).length
+  };
+}
+
+/**
+ * Speichert die EPG-Daten als JSON und GZIP
+ */
 async function saveJSON(data) {
   if (!data) return;
 
-  // Als epg.json speichern
-  const filePath = path.join(OUTPUT_DIR, 'epg.json');
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2));
-  
-  const sizeMB = (JSON.stringify(data).length / 1024 / 1024).toFixed(2);
-  console.log(`\n💾 epg.json gespeichert: ${sizeMB} MB`);
-  console.log(`   📺 ${data.totalChannels} Kanäle, ${data.totalProgrammes} Programme`);
+  console.log(`\n💾 Speichere EPG-Daten...`);
 
-  // Optional: Auch als epg.xml für Kompatibilität speichern
-  // Hier könnten Sie das Original-XML speichern falls nötig
+  // Als JSON speichern
+  const filePath = path.join(OUTPUT_DIR, 'epg.json');
+  const jsonString = JSON.stringify(data, null, 2);
+  await fs.writeFile(filePath, jsonString);
+  
+  const sizeMB = (jsonString.length / 1024 / 1024).toFixed(2);
+  console.log(`   ✅ epg.json: ${sizeMB} MB`);
+
+  // Auch als komprimierte Version für schnellere Downloads
+  const gzippedPath = path.join(OUTPUT_DIR, 'epg.json.gz');
+  const gzipped = zlib.gzipSync(jsonString);
+  await fs.writeFile(gzippedPath, gzipped);
+  
+  const gzipSizeMB = (gzipped.length / 1024 / 1024).toFixed(2);
+  const compressionRatio = ((1 - gzipped.length / jsonString.length) * 100).toFixed(1);
+  console.log(`   ✅ epg.json.gz: ${gzipSizeMB} MB (${compressionRatio}% komprimiert)`);
+  
+  console.log(`   📊 Statistiken:`);
+  console.log(`      - Kanäle: ${data.totalChannels}`);
+  console.log(`      - Programme: ${data.totalProgrammes}`);
+  console.log(`      - Letztes Update: ${data.updated}`);
+  console.log(`      - Quelle: ${data.source}`);
 }
 
+/**
+ * Erstellt eine Index-Datei mit Metadaten für Cloudflare
+ */
+async function createIndex(data) {
+  const indexData = {
+    lastUpdate: new Date().toISOString(),
+    source: data.source,
+    totalChannels: data.totalChannels,
+    totalProgrammes: data.totalProgrammes,
+    fileSizeKB: Math.round(JSON.stringify(data).length / 1024),
+    fileSizeCompressedKB: Math.round(zlib.gzipSync(JSON.stringify(data)).length / 1024),
+    sources: EPG_SOURCES.map(s => s.name)
+  };
+  
+  await fs.writeFile(
+    path.join(OUTPUT_DIR, 'index.json'), 
+    JSON.stringify(indexData, null, 2)
+  );
+  console.log(`\n📊 index.json erstellt mit Metadaten`);
+}
+
+/**
+ * Hauptfunktion
+ */
 async function main() {
   console.log('🚀 EPG-Update gestartet');
-  console.log('📡 Kombinierte EPG-Quellen werden versucht...\n');
+  console.log('='.repeat(60));
+  console.log(`📅 ${new Date().toLocaleString()}`);
+  console.log(`📡 ${EPG_SOURCES.length} EPG-Quellen konfiguriert`);
+  
+  const startTime = Date.now();
 
+  // Ausgabeverzeichnis erstellen
   await ensureDir(OUTPUT_DIR);
 
-  try {
-    const data = await downloadEPG();
-    await saveJSON(data);
-    
-    console.log('\n✨ EPG-Update erfolgreich abgeschlossen!');
-    
-    // Erstelle index.json (optional)
-    const indexData = {
-      lastUpdate: new Date().toISOString(),
-      source: data.source,
-      totalChannels: data.totalChannels,
-      totalProgrammes: data.totalProgrammes,
-      fileSizeKB: Math.round(JSON.stringify(data).length / 1024)
-    };
-    
-    await fs.writeFile(
-      path.join(OUTPUT_DIR, 'index.json'), 
-      JSON.stringify(indexData, null, 2)
-    );
-    console.log('📊 index.json erstellt');
-    
-  } catch (error) {
-    console.error(`\n❌ Fataler Fehler: ${error.message}`);
+  // Alle Quellen parallel laden
+  console.log(`\n📡 Lade EPG-Quellen parallel...\n`);
+  
+  const promises = EPG_SOURCES.map(source => downloadAndParseEPG(source));
+  const results = await Promise.allSettled(promises);
+  
+  // Erfolgreiche Ergebnisse filtern
+  const successfulData = results
+    .filter(r => r.status === 'fulfilled' && r.value !== null)
+    .map(r => r.value);
+  
+  console.log(`\n✅ Erfolgreiche Quellen: ${successfulData.length}/${EPG_SOURCES.length}`);
+  
+  if (successfulData.length === 0) {
+    console.error('\n❌ KEINE EPG-Daten konnten geladen werden!');
+    console.error('   Bitte überprüfen Sie:');
+    console.error('   - Internetverbindung');
+    console.error('   - Ob die URLs manuell im Browser erreichbar sind');
+    console.error('   - Ob firewall/proxy Zugriffe blockiert');
     process.exit(1);
   }
+
+  // Daten mergen
+  const mergedData = mergeEPGData(successfulData);
+  
+  if (!mergedData || mergedData.programmes.length === 0) {
+    console.error('\n❌ Merge fehlgeschlagen oder keine Programme vorhanden!');
+    process.exit(1);
+  }
+
+  // Speichern
+  await saveJSON(mergedData);
+  await createIndex(mergedData);
+  
+  const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`\n✨ EPG-Update erfolgreich abgeschlossen in ${duration} Sekunden!`);
+  console.log('='.repeat(60));
 }
 
-main().catch(console.error);
+// Fehlerbehandlung für unbehandelte Promise-Rejections
+process.on('unhandledRejection', (error) => {
+  console.error('\n❌ Unbehandelter Fehler:', error);
+  process.exit(1);
+});
+
+// Skript ausführen
+main().catch(error => {
+  console.error('\n❌ Fataler Fehler:', error);
+  process.exit(1);
+});
