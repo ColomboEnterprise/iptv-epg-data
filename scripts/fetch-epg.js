@@ -6,25 +6,17 @@ const { XMLParser } = require('fast-xml-parser');
 
 // FUNKTIONIERENDE EPG-Quellen (Stand März 2026)
 const EPG_SOURCES = [
-  // Primär: zsdc.eu.org - 130+ Kanäle, 7 Tage Voraus, tägliche Updates
   { 
     url: 'https://epg.zsdc.eu.org/t.xml.gz',
-    name: 'zsdc.eu.org'
+    name: 'zsdc.eu.org - 130+ Kanäle, 7 Tage Voraus'
   },
-  // Fallback 1: epg.one - große Abdeckung
   { 
     url: 'http://epg.one/epg.xml.gz',
-    name: 'epg.one'
+    name: 'epg.one - Große Abdeckung'
   },
-  // Fallback 2: iptvx.one - gute deutsche Abdeckung
   { 
     url: 'https://iptvx.one/epg/epg.xml.gz',
-    name: 'iptvx.one'
-  },
-  // Fallback 3: teleguide.info - russische Quelle
-  { 
-    url: 'http://www.teleguide.info/download/new3/xmltv.xml.gz',
-    name: 'teleguide.info'
+    name: 'iptvx.one - Gute deutsche Abdeckung'
   }
 ];
 
@@ -46,7 +38,8 @@ async function downloadEPG() {
   let lastError = null;
   
   for (const source of EPG_SOURCES) {
-    console.log(`\n📡 Versuche Quelle: ${source.name} (${source.url})`);
+    console.log(`\n📡 Versuche Quelle: ${source.name}`);
+    console.log(`   URL: ${source.url}`);
     
     try {
       const response = await fetch(source.url, {
@@ -82,7 +75,7 @@ async function downloadEPG() {
       console.log(`   🔍 Parse XML...`);
       const data = parseEPG(xmlText, source.name);
       
-      if (data) {
+      if (data && data.programmes.length > 0) {
         console.log(`   ✅ Erfolg mit ${source.name}!`);
         return data;
       }
@@ -166,7 +159,7 @@ function parseEPG(xmlText, sourceName) {
         cat: String(p.category || '').substring(0, 100)
       }));
 
-    console.log(`   🎯 ${filteredProgrammes.length} aktuelle Programme`);
+    console.log(`   🎯 ${filteredProgrammes.length} aktuelle Programme (nächste 7 Tage)`);
 
     return {
       updated: new Date().toISOString(),
@@ -193,6 +186,9 @@ async function saveJSON(data) {
   const sizeMB = (JSON.stringify(data).length / 1024 / 1024).toFixed(2);
   console.log(`\n💾 epg.json gespeichert: ${sizeMB} MB`);
   console.log(`   📺 ${data.totalChannels} Kanäle, ${data.totalProgrammes} Programme`);
+
+  // Optional: Auch als epg.xml für Kompatibilität speichern
+  // Hier könnten Sie das Original-XML speichern falls nötig
 }
 
 async function main() {
@@ -206,6 +202,21 @@ async function main() {
     await saveJSON(data);
     
     console.log('\n✨ EPG-Update erfolgreich abgeschlossen!');
+    
+    // Erstelle index.json (optional)
+    const indexData = {
+      lastUpdate: new Date().toISOString(),
+      source: data.source,
+      totalChannels: data.totalChannels,
+      totalProgrammes: data.totalProgrammes,
+      fileSizeKB: Math.round(JSON.stringify(data).length / 1024)
+    };
+    
+    await fs.writeFile(
+      path.join(OUTPUT_DIR, 'index.json'), 
+      JSON.stringify(indexData, null, 2)
+    );
+    console.log('📊 index.json erstellt');
     
   } catch (error) {
     console.error(`\n❌ Fataler Fehler: ${error.message}`);
