@@ -4,15 +4,21 @@ const path = require('path');
 const fetch = require('node-fetch');
 const { XMLParser } = require('fast-xml-parser');
 
-// IPTV-EPG.org – aktuelle EPG-Daten, alle 2 Stunden aktualisiert
-const EPG_BASE_URL = 'https://iptv-epg.org/files';
+// Mehrere EPG-Quellen für Redundanz
+const EPG_SOURCES = [
+  'https://iptv-org.github.io/epg/guides',      // iptv-org (täglich aktualisiert)
+  'https://iptv-epg.pages.dev/files',            // Cloudflare Pages Mirror
+  'https://iptv-epg-data.pages.dev',             // Ihr eigenes Repository
+  'https://epg.pw'                               // epg.pw (Alternative)
+];
 
 // Max Programme pro Land – verhindert >100MB Dateien
 const MAX_PROGRAMMES_PER_COUNTRY = 20000;
 
 // Parallele Downloads
-const CONCURRENCY = 5;
+const CONCURRENCY = 3;
 
+// Nur relevante Länder (die in Ihrer App vorkommen)
 const COUNTRIES = [
   // Europa
   'de', 'at', 'ch', 'it', 'fr', 'es', 'pt', 'gb', 'ie',
@@ -25,27 +31,26 @@ const COUNTRIES = [
   // Südamerika
   'br', 'ar', 'cl', 'co', 'pe', 've', 'ec', 'bo', 'py', 'uy',
   // Asien
-  'jp', 'kr', 'cn', 'tw', 'hk',
-  'in', 'pk', 'bd', 'lk', 'np',
+  'jp', 'kr', 'cn', 'tw', 'hk', 'in', 'pk', 'bd', 'lk', 'np',
   'id', 'my', 'sg', 'th', 'vn', 'ph', 'mm', 'kh',
   'ir', 'iq', 'sa', 'sy', 'jo', 'lb', 'il', 'ps',
-  'kw', 'bh', 'qa', 'ae', 'om',
-  'uz', 'kz', 'ge', 'az', 'am',
+  'kw', 'bh', 'qa', 'ae', 'om', 'uz', 'kz', 'ge', 'az', 'am',
   // Afrika
   'eg', 'za', 'ng', 'ke', 'gh', 'ma', 'dz', 'tn',
-  'ly', 'sd', 'et', 'ug', 'tz', 'cm', 'sn', 'ci',
   // Ozeanien
-  'au', 'nz', 'fj',
-  // Karibik
-  'cu', 'jm', 'do', 'pr', 'tt', 'bb'
+  'au', 'nz',
+  // International
+  'int'
 ];
 
 const OUTPUT_DIR = path.join(__dirname, '../public');
 
 const parser = new XMLParser({
   ignoreAttributes: false,
-  attributeNamePrefix: '@_',
-  parseAttributeValue: false
+  attributeNamePrefix: '',
+  parseAttributeValue: true,
+  trimValues: true,
+  isArray: (name) => ['programme', 'channel'].includes(name)
 });
 
 async function ensureDir(dir) {
@@ -53,28 +58,47 @@ async function ensureDir(dir) {
 }
 
 async function downloadEPG(code) {
-  const url = `${EPG_BASE_URL}/epg-${code}.xml`;
-  console.log(`📥 Lade ${code} von ${url}...`);
-
-  try {
-    const response = await fetch(url, {
-      headers: { 'Accept-Encoding': 'gzip' },
-      timeout: 60000
-    });
-
-    if (!response.ok) {
-      console.log(`   ⚠️ ${code}: Status ${response.status}`);
-      return null;
+  // Versuche alle Quellen
+  for (const source of EPG_SOURCES) {
+    let url;
+    if (source.includes('iptv-org')) {
+      url = `${source}/${code}.xml`;
+    } else if (source.includes('epg.pw')) {
+      url = `${source}/epg/${code}.xml`;
+    } else {
+      url = `${source}/epg-${code}.xml`;
     }
 
-    const text = await response.text();
-    const sizeMB = (text.length / 1024 / 1024).toFixed(2);
-    console.log(`   ✅ ${sizeMB} MB`);
-    return text;
-  } catch (error) {
-    console.log(`   ❌ ${code}: ${error.message}`);
-    return null;
+    console.log(`📥 Lade ${code} von ${url}...`);
+
+    try {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'IPTV-EPG-Fetcher/1.0' },
+        timeout: 30000
+      });
+
+      if (!response.ok) {
+        console.log(`   ⚠️ ${code}: Status ${response.status} von ${source}`);
+        continue;
+      }
+
+      const text = await response.text();
+      
+      if (!text.includes('<?xml') && !text.includes('<tv>')) {
+        console.log(`   ⚠️ ${code}: Kein gültiges XML von ${source}`);
+        continue;
+      }
+
+      const sizeMB = (text.length / 1024 / 1024).toFixed(2);
+      console.log(`   ✅ ${sizeMB} MB von ${source}`);
+      return { text, source };
+    } catch (error) {
+      console.log(`   ❌ ${code} von ${source}: ${error.message}`);
+    }
   }
+
+  console.log(`   ❌ ${code}: Alle Quellen fehlgeschlagen`);
+  return null;
 }
 
 function parseEPG(xmlText, countryCode) {
@@ -82,69 +106,88 @@ function parseEPG(xmlText, countryCode) {
     const result = parser.parse(xmlText);
 
     if (!result.tv || !result.tv.programme) {
-      console.log(`   ⚠️ ${countryCode}: Keine Programme`);
+      console.log(`   ⚠️ ${countryCode}: Keine Programme gefunden`);
       return null;
     }
 
-    let programmes = Array.isArray(result.tv.programme)
-      ? result.tv.programme
+    let programmes = Array.isArray(result.tv.programme) 
+      ? result.tv.programme 
       : [result.tv.programme];
 
-    // Channels aus dem XML extrahieren (für besseres Matching)
+    // Channels parsen
     let channels = {};
     if (result.tv.channel) {
-      const chList = Array.isArray(result.tv.channel)
-        ? result.tv.channel
+      const chList = Array.isArray(result.tv.channel) 
+        ? result.tv.channel 
         : [result.tv.channel];
+      
       for (const ch of chList) {
-        const id = ch['@_id'] || '';
-        const name = ch['display-name']
-          ? (typeof ch['display-name'] === 'string'
-            ? ch['display-name']
-            : ch['display-name']['#text'] || ch['display-name'])
+        const id = ch.id || '';
+        const displayName = ch['display-name'];
+        const name = displayName 
+          ? (typeof displayName === 'string' ? displayName : displayName[0] || '')
           : id;
-        channels[id] = String(name);
+        if (id) channels[id] = String(name);
       }
     }
 
     const totalFound = programmes.length;
 
-    // Nach Startzeit sortieren (neueste zuerst), dann limitieren
-    if (programmes.length > MAX_PROGRAMMES_PER_COUNTRY) {
-      programmes.sort((a, b) => {
-        const sa = String(a['@_start'] || '');
-        const sb = String(b['@_start'] || '');
-        return sb.localeCompare(sa);
+    // Filter: Nur Programme der nächsten 7 Tage
+    const now = new Date();
+    const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const parseDate = (dateStr) => {
+      if (!dateStr) return null;
+      const clean = dateStr.split(' ')[0];
+      if (clean.length === 14) {
+        const year = clean.slice(0, 4);
+        const month = clean.slice(4, 6);
+        const day = clean.slice(6, 8);
+        const hour = clean.slice(8, 10);
+        const min = clean.slice(10, 12);
+        const sec = clean.slice(12, 14);
+        return new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}Z`);
+      }
+      return null;
+    };
+
+    // Nach Datum filtern
+    programmes = programmes
+      .filter(p => {
+        const start = parseDate(p.start || p['start']);
+        return start && start <= sevenDaysLater;
+      })
+      .sort((a, b) => {
+        const sa = String(a.start || a['start'] || '');
+        const sb = String(b.start || b['start'] || '');
+        return sa.localeCompare(sb);
       });
+
+    // Limitieren
+    if (programmes.length > MAX_PROGRAMMES_PER_COUNTRY) {
       programmes = programmes.slice(0, MAX_PROGRAMMES_PER_COUNTRY);
-      console.log(`   ✂️ ${countryCode}: ${totalFound} → ${MAX_PROGRAMMES_PER_COUNTRY} Programme (limitiert)`);
+      console.log(`   ✂️ ${countryCode}: ${totalFound} → ${MAX_PROGRAMMES_PER_COUNTRY} Programme`);
     }
 
     console.log(`   🔍 ${programmes.length} Programme, ${Object.keys(channels).length} Kanäle`);
 
-    const simplified = {
+    return {
       updated: new Date().toISOString(),
       country: countryCode,
       count: programmes.length,
       totalAvailable: totalFound,
       channelCount: Object.keys(channels).length,
       channels: channels,
-      programmes: programmes.map(p => {
-        const title = p.title;
-        const desc = p.desc;
-        const cat = p.category;
-        return {
-          c: String(p['@_channel'] || ''),
-          t: String(title && (title['#text'] || title) || 'Unbekannt'),
-          s: String(p['@_start'] || ''),
-          e: String(p['@_stop'] || ''),
-          d: String(desc && (desc['#text'] || desc) || ''),
-          cat: String(cat && (cat['#text'] || cat) || '')
-        };
-      })
+      programmes: programmes.map(p => ({
+        c: String(p.channel || p['channel'] || ''),
+        t: String(p.title || 'Unbekannt'),
+        s: String(p.start || p['start'] || ''),
+        e: String(p.stop || p['stop'] || ''),
+        d: String(p.desc || ''),
+        cat: String(p.category || '')
+      }))
     };
-
-    return simplified;
   } catch (error) {
     console.log(`   ❌ ${countryCode}: Parse-Fehler - ${error.message}`);
     return null;
@@ -159,8 +202,7 @@ async function saveJSON(data, countryCode) {
 
   await fs.writeFile(filePath, jsonString);
   const sizeKB = (jsonString.length / 1024).toFixed(2);
-  const sizeMB = (jsonString.length / 1024 / 1024).toFixed(2);
-  console.log(`   💾 ${sizeMB > 1 ? sizeMB + ' MB' : sizeKB + ' KB'} gespeichert (${data.count} Programme, ${data.channelCount} Kanäle)`);
+  console.log(`   💾 ${sizeKB} KB gespeichert (${data.count} Programme)`);
 
   return {
     country: countryCode,
@@ -173,7 +215,7 @@ async function saveJSON(data, countryCode) {
 async function createIndex(results) {
   const index = {
     lastUpdate: new Date().toISOString(),
-    source: 'iptv-epg.org',
+    source: 'iptv-org',
     totalCountries: results.length,
     totalProgrammes: results.reduce((sum, r) => sum + (r.count || 0), 0),
     totalChannels: results.reduce((sum, r) => sum + (r.channelCount || 0), 0),
@@ -187,63 +229,51 @@ async function createIndex(results) {
 
   const indexPath = path.join(OUTPUT_DIR, 'index.json');
   await fs.writeFile(indexPath, JSON.stringify(index, null, 2));
-  console.log(`\n📊 Index erstellt: ${results.length} Länder, ${index.totalChannels} Kanäle, ${index.totalProgrammes} Programme`);
+  console.log(`\n📊 Index erstellt: ${results.length} Länder`);
 }
 
 async function processInBatches(items, batchSize, fn) {
   const results = [];
   for (let i = 0; i < items.length; i += batchSize) {
     const batch = items.slice(i, i + batchSize);
+    console.log(`\n📦 Batch ${Math.floor(i/batchSize)+1}/${Math.ceil(items.length/batchSize)}`);
     const batchResults = await Promise.all(batch.map(fn));
-    results.push(...batchResults);
-    if (i + batchSize < items.length) {
-      console.log(`   ⏳ Fortschritt: ${Math.min(i + batchSize, items.length)}/${items.length}\n`);
-    }
+    results.push(...batchResults.filter(Boolean));
   }
   return results;
 }
 
 async function processCountry(code) {
   try {
-    const xmlText = await downloadEPG(code);
-    if (!xmlText) return null;
+    const result = await downloadEPG(code);
+    if (!result) return null;
 
-    const data = parseEPG(xmlText, code);
+    const data = parseEPG(result.text, code);
     if (!data) return null;
 
-    const result = await saveJSON(data, code);
-    console.log('');
-    return result;
+    return await saveJSON(data, code);
   } catch (error) {
-    console.log(`   ❌ ${code}: ${error.message}\n`);
+    console.log(`   ❌ ${code}: ${error.message}`);
     return null;
   }
 }
 
 async function main() {
   console.log('🚀 EPG-Update gestartet');
-  console.log(`📡 Quelle: ${EPG_BASE_URL}`);
+  console.log(`📡 Quellen: ${EPG_SOURCES.length} verfügbar`);
   console.log(`🌍 ${COUNTRIES.length} Länder`);
-  console.log(`📏 Max ${MAX_PROGRAMMES_PER_COUNTRY} Programme pro Land\n`);
+  console.log(`📏 Max ${MAX_PROGRAMMES_PER_COUNTRY} Programme/Land\n`);
 
   await ensureDir(OUTPUT_DIR);
 
-  const allResults = await processInBatches(COUNTRIES, CONCURRENCY, processCountry);
-  const results = allResults.filter(Boolean);
-
-  await createIndex(results);
-
-  // Warnung bei großen Dateien
-  const largeFiles = results.filter(r => r.size > 50 * 1024 * 1024);
-  if (largeFiles.length > 0) {
-    console.log(`\n⚠️ Große Dateien (>50MB):`);
-    for (const f of largeFiles) {
-      console.log(`   ${f.country}.json: ${(f.size / 1024 / 1024).toFixed(1)} MB`);
-    }
+  const results = await processInBatches(COUNTRIES, CONCURRENCY, processCountry);
+  
+  if (results.length > 0) {
+    await createIndex(results);
+    console.log(`\n✨ Fertig! ${results.length} Länder erfolgreich.`);
+  } else {
+    console.log('\n❌ Keine Daten konnten geladen werden!');
   }
-
-  console.log(`\n✨ Fertig! ${results.length} von ${COUNTRIES.length} Ländern erfolgreich.`);
-  console.log(`📁 Ausgabe: ${OUTPUT_DIR}`);
 }
 
 main().catch(console.error);
