@@ -1,39 +1,39 @@
 {
-  "lastUpdate": "2026-03-09T05:00:50.569Z",
+  "lastUpdate": "2026-03-09T11:45:57.983Z",
   "source": "iptv-epg.org",
   "totalCountries": 74,
-  "totalProgrammes": 1125669,
+  "totalProgrammes": 1127784,
   "totalChannels": 28300,
   "countries": [
     {
       "code": "de",
       "programmes": 20000,
       "channels": 433,
-      "sizeKB": 6224
+      "sizeKB": 6210
     },
     {
       "code": "at",
       "programmes": 20000,
       "channels": 286,
-      "sizeKB": 5430
+      "sizeKB": 5431
     },
     {
       "code": "ch",
       "programmes": 20000,
       "channels": 707,
-      "sizeKB": 5840
+      "sizeKB": 5860
     },
     {
       "code": "it",
       "programmes": 20000,
       "channels": 305,
-      "sizeKB": 5133
+      "sizeKB": 5103
     },
     {
       "code": "fr",
       "programmes": 20000,
       "channels": 494,
-      "sizeKB": 4598
+      "sizeKB": 4594
     },
     {
       "code": "es",
@@ -51,7 +51,7 @@
       "code": "gb",
       "programmes": 20000,
       "channels": 941,
-      "sizeKB": 4948
+      "sizeKB": 4896
     },
     {
       "code": "nl",
@@ -61,33 +61,33 @@
     },
     {
       "code": "be",
-      "programmes": 18583,
+      "programmes": 14111,
       "channels": 262,
-      "sizeKB": 5334
+      "sizeKB": 4033
     },
     {
       "code": "lu",
       "programmes": 20000,
       "channels": 325,
-      "sizeKB": 8944
+      "sizeKB": 8887
     },
     {
       "code": "dk",
-      "programmes": 11883,
+      "programmes": 15559,
       "channels": 224,
-      "sizeKB": 4049
+      "sizeKB": 5300
     },
     {
       "code": "se",
-      "programmes": 8546,
+      "programmes": 8564,
       "channels": 94,
-      "sizeKB": 1842
+      "sizeKB": 1832
     },
     {
       "code": "no",
-      "programmes": 10324,
+      "programmes": 10381,
       "channels": 95,
-      "sizeKB": 3003
+      "sizeKB": 3013
     },
     {
       "code": "fi",
@@ -97,27 +97,27 @@
     },
     {
       "code": "is",
-      "programmes": 5397,
+      "programmes": 5359,
       "channels": 70,
-      "sizeKB": 1774
+      "sizeKB": 1751
     },
     {
       "code": "pl",
       "programmes": 20000,
       "channels": 450,
-      "sizeKB": 7755
+      "sizeKB": 7839
     },
     {
       "code": "cz",
       "programmes": 20000,
       "channels": 315,
-      "sizeKB": 3408
+      "sizeKB": 3430
     },
     {
       "code": "hu",
       "programmes": 20000,
       "channels": 152,
-      "sizeKB": 6358
+      "sizeKB": 6340
     },
     {
       "code": "ro",
@@ -127,15 +127,15 @@
     },
     {
       "code": "bg",
-      "programmes": 14491,
+      "programmes": 14273,
       "channels": 116,
-      "sizeKB": 2274
+      "sizeKB": 2223
     },
     {
       "code": "gr",
-      "programmes": 10518,
+      "programmes": 10241,
       "channels": 172,
-      "sizeKB": 3064
+      "sizeKB": 2999
     },
     {
       "code": "hr",
@@ -153,7 +153,7 @@
       "code": "rs",
       "programmes": 20000,
       "channels": 265,
-      "sizeKB": 5018
+      "sizeKB": 5001
     },
     {
       "code": "ba",
@@ -175,27 +175,27 @@
     },
     {
       "code": "mk",
-      "programmes": 9516,
+      "programmes": 9576,
       "channels": 109,
-      "sizeKB": 2126
+      "sizeKB": 2127
     },
     {
       "code": "tr",
-      "programmes": 10815,
+      "programmes": 10232,
       "channels": 126,
-      "sizeKB": 3066
+      "sizeKB": 2906
     },
     {
       "code": "ru",
       "programmes": 20000,
       "channels": 223,
-      "sizeKB": 6709
+      "sizeKB": 6734
     },
     {
       "code": "ua",
-      "programmes": 9343,
+      "programmes": 20000,
       "channels": 233,
-      "sizeKB": 2524
+      "sizeKB": 4221
     },
     {
       "code": "by",
@@ -205,9 +205,9 @@
     },
     {
       "code": "lt",
-      "programmes": 16859,
+      "programmes": 16705,
       "channels": 185,
-      "sizeKB": 5626
+      "sizeKB": 5579
     },
     {
       "code": "lv",
@@ -225,43 +225,43 @@
       "code": "us",
       "programmes": 20000,
       "channels": 12690,
-      "sizeKB": 4679
+      "sizeKB": 4487
     },
     {
       "code": "ca",
       "programmes": 20000,
       "channels": 744,
-      "sizeKB": 4739
+      "sizeKB": 4699
     },
     {
       "code": "mx",
-      "programmes": 16653,
+      "programmes": 16381,
       "channels": 177,
-      "sizeKB": 4565
+      "sizeKB": 4545
     },
     {
       "code": "br",
-      "programmes": 17456,
+      "programmes": 17796,
       "channels": 182,
-      "sizeKB": 4972
+      "sizeKB": 5050
     },
     {
       "code": "ar",
-      "programmes": 16173,
+      "programmes": 16111,
       "channels": 183,
-      "sizeKB": 4721
+      "sizeKB": 4696
     },
     {
       "code": "cl",
-      "programmes": 17688,
+      "programmes": 20000,
       "channels": 188,
-      "sizeKB": 5008
+      "sizeKB": 5687
     },
     {
       "code": "co",
-      "programmes": 17301,
+      "programmes": 17153,
       "channels": 179,
-      "sizeKB": 5158
+      "sizeKB": 5119
     },
     {
       "code": "pe",
@@ -271,15 +271,15 @@
     },
     {
       "code": "ve",
-      "programmes": 3248,
+      "programmes": 2289,
       "channels": 56,
-      "sizeKB": 646
+      "sizeKB": 465
     },
     {
       "code": "ec",
-      "programmes": 11270,
+      "programmes": 10778,
       "channels": 105,
-      "sizeKB": 1410
+      "sizeKB": 1346
     },
     {
       "code": "bo",
@@ -289,9 +289,9 @@
     },
     {
       "code": "py",
-      "programmes": 7913,
+      "programmes": 7716,
       "channels": 79,
-      "sizeKB": 2331
+      "sizeKB": 2297
     },
     {
       "code": "uy",
@@ -309,7 +309,7 @@
       "code": "kr",
       "programmes": 20000,
       "channels": 251,
-      "sizeKB": 2721
+      "sizeKB": 2713
     },
     {
       "code": "tw",
@@ -319,9 +319,9 @@
     },
     {
       "code": "hk",
-      "programmes": 16307,
+      "programmes": 16075,
       "channels": 176,
-      "sizeKB": 4044
+      "sizeKB": 3998
     },
     {
       "code": "in",
@@ -409,9 +409,9 @@
     },
     {
       "code": "za",
-      "programmes": 14931,
+      "programmes": 14725,
       "channels": 174,
-      "sizeKB": 2351
+      "sizeKB": 2334
     },
     {
       "code": "ng",
@@ -421,33 +421,33 @@
     },
     {
       "code": "gh",
-      "programmes": 15439,
+      "programmes": 15448,
       "channels": 142,
-      "sizeKB": 3486
+      "sizeKB": 3639
     },
     {
       "code": "ug",
-      "programmes": 19419,
+      "programmes": 15857,
       "channels": 154,
-      "sizeKB": 3939
+      "sizeKB": 3412
     },
     {
       "code": "au",
       "programmes": 20000,
       "channels": 518,
-      "sizeKB": 5286
+      "sizeKB": 5270
     },
     {
       "code": "nz",
-      "programmes": 9260,
+      "programmes": 8013,
       "channels": 100,
-      "sizeKB": 2277
+      "sizeKB": 1976
     },
     {
       "code": "do",
-      "programmes": 8370,
+      "programmes": 6475,
       "channels": 97,
-      "sizeKB": 1495
+      "sizeKB": 1130
     }
   ]
 }
