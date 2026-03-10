@@ -12,6 +12,7 @@ jobs:
       
       - name: EPG laden und aufteilen
         run: |
+          # Verzeichnis erstellen
           mkdir -p public/epg/de
           
           # EPG laden
@@ -22,59 +23,87 @@ jobs:
           echo "📦 Entpacke EPG..."
           gunzip -f epg.xml.gz
           
+          # Prüfen ob Datei existiert
+          if [ ! -f epg.xml ]; then
+            echo "❌ epg.xml wurde nicht erstellt!"
+            ls -la
+            exit 1
+          fi
+          
           # Dateigröße prüfen
           TOTAL_SIZE=$(wc -c < epg.xml)
           echo "📊 Größe: $(($TOTAL_SIZE / 1024 / 1024)) MB"
           
           # In 20 MB Teile aufteilen (nach Zeilen)
           echo "✂️ Teile EPG auf..."
-          cd public/epg/de
           
           # XML-Header für alle Teile
           echo '<?xml version="1.0" encoding="UTF-8"?><tv>' > header.xml
           echo '</tv>' > footer.xml
           
           # Hauptdatei in Blöcke aufteilen (je 50000 Zeilen)
-          split -l 50000 ../../epg.xml teil_ --additional-suffix=.xml
+          echo "🔍 Teile epg.xml auf..."
+          split -l 50000 epg.xml teil_ --additional-suffix=.xml
           
-          # Jeden Teil mit Header/Footer versehen und komprimieren
+          # Anzahl der Teile
+          teile=$(ls teil_*.xml 2>/dev/null | wc -l)
+          echo "📊 $teile Teile werden erstellt"
+          
+          # Jeden Teil mit Header/Footer versehen und in public verschieben
+          cd public/epg/de
           part_num=1
-          for file in teil_*.xml; do
-            cat header.xml "$file" footer.xml > "epg_teil_$part_num.xml"
-            gzip -f "epg_teil_$part_num.xml"
-            rm "$file"
-            echo "   ✅ Teil $part_num: $(wc -c < epg_teil_$part_num.xml.gz) Bytes"
-            part_num=$((part_num + 1))
+          
+          for file in ../../../teil_*.xml; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              echo "   🔄 Verarbeite Teil $part_num: $filename"
+              
+              # Header + Inhalt + Footer
+              cat ../../../header.xml "$file" ../../../footer.xml > "epg_teil_$part_num.xml"
+              
+              # Komprimieren
+              gzip -f "epg_teil_$part_num.xml"
+              
+              # Größe anzeigen
+              size=$(wc -c < "epg_teil_$part_num.xml.gz")
+              echo "   ✅ Teil $part_num: $(($size / 1024 / 1024)) MB"
+              
+              part_num=$((part_num + 1))
+            fi
           done
           
-          rm header.xml footer.xml
+          # Aufräumen
+          rm -f ../../../teil_*.xml ../../../header.xml ../../../footer.xml
           
           # Index.json mit allen Teilen
           cat > index.json << EOF
           {
             "status": "ok",
-            "zeit": "$(date)",
+            "zeit": "$(date -Iseconds)",
             "teile": $((part_num - 1)),
             "dateien": [
           EOF
           
           first=1
           for i in $(seq 1 $((part_num - 1))); do
-            if [ $first -eq 1 ]; then
-              first=0
-            else
-              echo "," >> index.json
+            if [ -f "epg_teil_${i}.xml.gz" ]; then
+              if [ $first -eq 1 ]; then
+                first=0
+              else
+                echo "," >> index.json
+              fi
+              size=$(wc -c < "epg_teil_${i}.xml.gz")
+              echo "    {\"teil\": $i, \"datei\": \"epg_teil_${i}.xml.gz\", \"size\": $size}" >> index.json
             fi
-            size=$(wc -c < "epg_teil_${i}.xml.gz")
-            echo "    {\"teil\": $i, \"datei\": \"epg_teil_${i}.xml.gz\", \"size\": $size}" >> index.json
           done
           
           echo "  ]}" >> index.json
           
-          cd ../..
+          echo ""
+          echo "✅ Fertig! Folgende Dateien wurden erstellt:"
+          ls -la
           
-          echo "✅ EPG in $((part_num - 1)) Teile aufgeteilt"
-          ls -la public/epg/de/
+          cd ../../..
       
       - name: Zu Cloudflare deployen
         uses: cloudflare/pages-action@v1
