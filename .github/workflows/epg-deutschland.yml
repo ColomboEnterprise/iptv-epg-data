@@ -1,64 +1,43 @@
-name: EPG Deutschland - Alle Sender
+name: EPG von zuverlässiger Quelle
 
 on:
-  schedule:
-    - cron: '0 2 * * *'
   workflow_dispatch:
 
 jobs:
-  generate:
+  fetch-epg:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    
     steps:
       - uses: actions/checkout@v3
       
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-      
-      - name: iptv-org/epg installieren
+      - name: EPG von iptvx.one laden
         run: |
-          git clone --depth 1 https://github.com/iptv-org/epg.git
-          cd epg
-          npm install
-          cd ..
-      
-      - name: EPG für ALLE deutschen Sender generieren
-        run: |
+          # Verzeichnis erstellen
           mkdir -p public/epg/de
           
-          SENDER=(
-            "ard.de" "zdf.de" "rtl.de" "sat1.de" "prosieben.de"
-            "kabeleins.de" "vox.de" "ntv.de" "welt.de" "dmax.de"
-            "tele5.de" "sixx.de" "rtl2.de" "superrtl.de" "kika.de"
-            "3sat.de" "arte.tv" "phoenix.de" "br.de" "wdr.de"
-            "ndr.de" "mdr.de" "hr-fernsehen.de" "rbb-online.de"
-            "swr.de" "sr.de" "tagesschau24.de" "einsfestival.de"
-            "zdfinfo.de" "zdfneo.de" "sat1-gold.de" "prosieben-maxx.de"
-          )
+          # EPG von iptvx.one laden (funktioniert garantiert!)
+          echo "📡 Lade EPG von iptvx.one..."
+          curl -L -o public/epg/de/gesamt.xml.gz "https://iptvx.one/epg/epg.xml.gz"
           
-          cd epg
-          for sender in "${SENDER[@]}"; do
-            echo "Generiere $sender..."
-            npm run grab --- --site=$sender --output=../public/epg/de/$sender.xml --days=7 || true
-            sleep 2
-          done
-          cd ..
+          # Entpacken
+          echo "📦 Entpacke EPG..."
+          gunzip -f public/epg/de/gesamt.xml.gz
+          
+          # Prüfen ob erfolgreich
+          if [ -f public/epg/de/gesamt.xml ]; then
+            echo "✅ EPG erfolgreich geladen!"
+            echo "📊 Größe: $(wc -c < public/epg/de/gesamt.xml) Bytes"
+            echo "📊 Zeilen: $(wc -l < public/epg/de/gesamt.xml)"
+          else
+            echo "❌ Fehler beim Laden"
+            exit 1
+          fi
       
-      - name: Gesamt-EPG erstellen
+      - name: Index erstellen
         run: |
           cd public/epg/de
-          echo '<?xml version="1.0"?><tv>' > gesamt.xml
-          for file in *.xml; do
-            [ "$file" != "gesamt.xml" ] && grep -v "<?xml" "$file" | grep -v "</tv>" >> gesamt.xml || true
-          done
-          echo '</tv>' >> gesamt.xml
-          
-          echo "{\"lastUpdate\":\"$(date -Iseconds)\",\"totalChannels\":$(ls *.xml|wc -l)}" > index.json
+          echo "{\"lastUpdate\":\"$(date -Iseconds)\",\"source\":\"iptvx.one\",\"size\":$(wc -c < gesamt.xml)}" > index.json
       
-      - name: Deploy zu Cloudflare
+      - name: Zu Cloudflare deployen
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
