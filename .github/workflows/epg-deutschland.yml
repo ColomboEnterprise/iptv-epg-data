@@ -1,28 +1,59 @@
-name: EPG Test
+name: EPG Deutschland
 
 on:
   workflow_dispatch:
 
 jobs:
-  test:
+  generate:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
       
-      - name: Zeige Datum
-        run: |
-          echo "✅ Workflow läuft!"
-          echo "📅 Datum: $(date)"
-          echo "🌐 GitHub Actions: JA"
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
       
-      - name: Erstelle Test-Datei
+      - name: EPG generieren (einfache Version)
         run: |
+          # Verzeichnis erstellen
           mkdir -p public/epg/de
-          echo '{"test":"ok","zeit":"$(date)"}' > public/index.json
-          echo '<?xml version="1.0"?><tv><channel id="test"><display-name>Test</display-name></channel></tv>' > public/epg/de/test.xml
+          
+          # Einfache XML-Datei mit aktuellen Daten erstellen
+          cat > public/epg/de/ard.de.xml << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <tv>
+            <channel id="ard.de">
+              <display-name>ARD</display-name>
+            </channel>
+            <programme channel="ard.de" start="$(date -u +'%Y%m%d%H%M%S') +0000" stop="$(date -u -d '+30 minutes' +'%Y%m%d%H%M%S') +0000">
+              <title>ARD Programm</title>
+              <desc>Aktuelles Programm von ARD</desc>
+            </programme>
+          </tv>
+          EOF
+          
+          # Index.json erstellen
+          cat > public/epg/de/index.json << EOF
+          {
+            "lastUpdate": "$(date -Iseconds)",
+            "country": "Deutschland",
+            "countryCode": "de",
+            "totalChannels": 1,
+            "channels": [
+              {"channel": "ard.de", "file": "ard.de.xml"}
+            ]
+          }
+          EOF
+          
+          echo "✅ EPG-Dateien erstellt"
+          ls -la public/epg/de/
       
-      - name: Zeige Dateien
-        run: |
-          echo "📁 Erstellte Dateien:"
-          find public -type f
+      - name: Nach Cloudflare deployen
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: "iptv-epg-data"
+          directory: public
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
