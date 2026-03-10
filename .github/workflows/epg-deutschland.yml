@@ -1,11 +1,15 @@
 name: EPG Deutschland
 
 on:
+  schedule:
+    - cron: '0 2 * * *'  # Täglich um 2:00 UTC
   workflow_dispatch:
 
 jobs:
   generate:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
     steps:
       - uses: actions/checkout@v3
       
@@ -14,40 +18,79 @@ jobs:
         with:
           node-version: '18'
       
-      - name: EPG generieren (einfache Version)
+      - name: iptv-org/epg installieren
+        run: |
+          git clone --depth 1 https://github.com/iptv-org/epg.git
+          cd epg
+          npm install
+          cd ..
+      
+      - name: EPG für deutsche Sender generieren
         run: |
           # Verzeichnis erstellen
           mkdir -p public/epg/de
           
-          # Einfache XML-Datei mit aktuellen Daten erstellen
-          cat > public/epg/de/ard.de.xml << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <tv>
-            <channel id="ard.de">
-              <display-name>ARD</display-name>
-            </channel>
-            <programme channel="ard.de" start="$(date -u +'%Y%m%d%H%M%S') +0000" stop="$(date -u -d '+30 minutes' +'%Y%m%d%H%M%S') +0000">
-              <title>ARD Programm</title>
-              <desc>Aktuelles Programm von ARD</desc>
-            </programme>
-          </tv>
-          EOF
+          # Liste der deutschen Sender
+          SENDER=(
+            "ard.de"
+            "zdf.de"
+            "rtl.de"
+            "sat1.de"
+            "prosieben.de"
+            "kabeleins.de"
+            "vox.de"
+            "ntv.de"
+            "welt.de"
+          )
+          
+          cd epg
+          
+          for sender in "${SENDER[@]}"; do
+            echo "Generiere $sender..."
+            npm run grab --- --site=$sender --output=../public/epg/de/$sender.xml --days=7 --maxConnections=2 || echo "⚠️ Fehler bei $sender"
+            sleep 2
+          done
+          
+          cd ..
+      
+      - name: Gesamt-EPG erstellen
+        run: |
+          cd public/epg/de
+          
+          # XML-Dateien zusammensetzen
+          echo '<?xml version="1.0" encoding="UTF-8"?><tv>' > gesamt.xml
+          
+          for file in *.xml; do
+            if [ "$file" != "gesamt.xml" ]; then
+              grep -v "<?xml" "$file" | grep -v "</tv>" >> gesamt.xml || true
+            fi
+          done
+          
+          echo '</tv>' >> gesamt.xml
           
           # Index.json erstellen
-          cat > public/epg/de/index.json << EOF
+          cat > index.json << EOF
           {
             "lastUpdate": "$(date -Iseconds)",
             "country": "Deutschland",
             "countryCode": "de",
-            "totalChannels": 1,
+            "totalChannels": $(ls *.xml | grep -v gesamt.xml | wc -l),
             "channels": [
-              {"channel": "ard.de", "file": "ard.de.xml"}
-            ]
-          }
           EOF
           
-          echo "✅ EPG-Dateien erstellt"
-          ls -la public/epg/de/
+          first=1
+          for file in *.xml; do
+            if [ "$file" != "gesamt.xml" ]; then
+              if [ $first -eq 1 ]; then
+                first=0
+              else
+                echo "," >> index.json
+              fi
+              echo "    {\"channel\": \"$(basename "$file" .xml)\", \"file\": \"$file\"}" >> index.json
+            fi
+          done
+          
+          echo "  ]}" >> index.json
       
       - name: Nach Cloudflare deployen
         uses: cloudflare/pages-action@v1
