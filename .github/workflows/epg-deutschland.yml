@@ -9,33 +9,81 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
-      - name: EPG von iptvx.one laden
+      - name: EPG laden und komprimieren
         run: |
           # Verzeichnis erstellen
           mkdir -p public/epg/de
           
-          # EPG von iptvx.one laden (funktioniert garantiert!)
+          # EPG laden (als .gz, das ist schon komprimiert!)
           echo "📡 Lade EPG von iptvx.one..."
           curl -L -o public/epg/de/gesamt.xml.gz "https://iptvx.one/epg/epg.xml.gz"
           
-          # Entpacken
-          echo "📦 Entpacke EPG..."
-          gunzip -f public/epg/de/gesamt.xml.gz
+          # Größe prüfen
+          ORIG_SIZE=$(wc -c < public/epg/de/gesamt.xml.gz)
+          echo "📦 Komprimierte Größe: $(($ORIG_SIZE / 1024 / 1024)) MB"
           
-          # Prüfen ob erfolgreich
-          if [ -f public/epg/de/gesamt.xml ]; then
-            echo "✅ EPG erfolgreich geladen!"
-            echo "📊 Größe: $(wc -c < public/epg/de/gesamt.xml) Bytes"
-            echo "📊 Zeilen: $(wc -l < public/epg/de/gesamt.xml)"
+          # In Cloudflare-kompatible Größe aufteilen (max 25 MB pro Teil)
+          if [ $ORIG_SIZE -gt 26214400 ]; then
+            echo "📦 Datei zu groß, teile auf..."
+            
+            # Entpacken für Aufteilung
+            gunzip -f public/epg/de/gesamt.xml.gz
+            
+            # In 20 MB Teile aufteilen (nach Zeilen, nicht binär)
+            cd public/epg/de
+            split -l 100000 gesamt.xml teil_ --additional-suffix=.xml
+            
+            # Teile einzeln komprimieren
+            for file in teil_*.xml; do
+              gzip -f "$file"
+              echo "   ✅ ${file}.gz erstellt"
+            done
+            
+            # Original entfernen
+            rm gesamt.xml
+            
+            # Index mit allen Teilen erstellen
+            cat > index.json << EOF
+            {
+              "lastUpdate": "$(date -Iseconds)",
+              "source": "iptvx.one",
+              "totalSize": $ORIG_SIZE,
+              "parts": $(ls teil_*.xml.gz 2>/dev/null | wc -l),
+              "files": [
+            EOF
+            
+            first=1
+            for file in teil_*.xml.gz; do
+              if [ $first -eq 1 ]; then
+                first=0
+              else
+                echo "," >> index.json
+              fi
+              size=$(wc -c < "$file")
+              echo "    {\"file\": \"$file\", \"size\": $size}" >> index.json
+            done
+            
+            echo "  ]}" >> index.json
+            
+            cd ../..
           else
-            echo "❌ Fehler beim Laden"
-            exit 1
+            echo "✅ Dateigröße OK"
+            # Index für einzelne Datei
+            cd public/epg/de
+            cat > index.json << EOF
+            {
+              "lastUpdate": "$(date -Iseconds)",
+              "source": "iptvx.one",
+              "file": "gesamt.xml.gz",
+              "size": $ORIG_SIZE
+            }
+EOF
+            cd ../..
           fi
-      
-      - name: Index erstellen
-        run: |
-          cd public/epg/de
-          echo "{\"lastUpdate\":\"$(date -Iseconds)\",\"source\":\"iptvx.one\",\"size\":$(wc -c < gesamt.xml)}" > index.json
+          
+          echo ""
+          echo "📊 Finale Dateien:"
+          ls -la public/epg/de/
       
       - name: Zu Cloudflare deployen
         uses: cloudflare/pages-action@v1
