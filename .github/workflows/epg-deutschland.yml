@@ -1,10 +1,12 @@
-name: EPG Einfach
+name: EPG Deutschland
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * *'  # Täglich um 2:00 UTC
 
 jobs:
-  simple:
+  generate-epg:
     runs-on: ubuntu-latest
     steps:
       - name: Repository auschecken
@@ -16,48 +18,35 @@ jobs:
           mkdir -p public/epg/de
           
           # EPG laden
-          echo "📡 Lade EPG..."
+          echo "📡 Lade EPG von iptvx.one..."
           curl -L -o epg.xml.gz "https://iptvx.one/epg/epg.xml.gz"
           
           # Entpacken
           echo "📦 Entpacke EPG..."
           gunzip -f epg.xml.gz
           
-          # Prüfen ob Datei existiert
-          if [ ! -f epg.xml ]; then
-            echo "❌ epg.xml wurde nicht erstellt!"
-            ls -la
-            exit 1
-          fi
-          
-          # Dateigröße prüfen
+          # Dateigröße anzeigen
           TOTAL_SIZE=$(wc -c < epg.xml)
-          echo "📊 Größe: $(($TOTAL_SIZE / 1024 / 1024)) MB"
+          echo "📊 Gesamtgröße: $(($TOTAL_SIZE / 1024 / 1024)) MB"
           
-          # In 20 MB Teile aufteilen (nach Zeilen)
-          echo "✂️ Teile EPG auf..."
-          
-          # XML-Header für alle Teile
+          # XML-Header und Footer
           echo '<?xml version="1.0" encoding="UTF-8"?><tv>' > header.xml
           echo '</tv>' > footer.xml
           
-          # Hauptdatei in Blöcke aufteilen (je 50000 Zeilen)
-          echo "🔍 Teile epg.xml auf..."
+          # In 50000 Zeilen-Blöcke aufteilen
+          echo "✂️ Teile EPG in kleinere Dateien..."
           split -l 50000 epg.xml teil_ --additional-suffix=.xml
           
-          # Anzahl der Teile
+          # Teile zählen
           teile=$(ls teil_*.xml 2>/dev/null | wc -l)
           echo "📊 $teile Teile werden erstellt"
           
-          # Jeden Teil mit Header/Footer versehen und in public verschieben
+          # Jeden Teil verarbeiten
           cd public/epg/de
           part_num=1
           
           for file in ../../../teil_*.xml; do
             if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              echo "   🔄 Verarbeite Teil $part_num: $filename"
-              
               # Header + Inhalt + Footer
               cat ../../../header.xml "$file" ../../../footer.xml > "epg_teil_$part_num.xml"
               
@@ -66,7 +55,7 @@ jobs:
               
               # Größe anzeigen
               size=$(wc -c < "epg_teil_$part_num.xml.gz")
-              echo "   ✅ Teil $part_num: $(($size / 1024 / 1024)) MB"
+              echo "   ✅ Teil $part_num: $(($size / 1024)) KB"
               
               part_num=$((part_num + 1))
             fi
@@ -75,13 +64,15 @@ jobs:
           # Aufräumen
           rm -f ../../../teil_*.xml ../../../header.xml ../../../footer.xml
           
-          # Index.json mit allen Teilen
+          # Index.json mit allen Teilen erstellen
           cat > index.json << EOF
           {
-            "status": "ok",
-            "zeit": "$(date -Iseconds)",
-            "teile": $((part_num - 1)),
-            "dateien": [
+            "lastUpdate": "$(date -Iseconds)",
+            "country": "Deutschland",
+            "countryCode": "de",
+            "totalParts": $((part_num - 1)),
+            "totalSize": $TOTAL_SIZE,
+            "files": [
           EOF
           
           first=1
@@ -93,19 +84,19 @@ jobs:
                 echo "," >> index.json
               fi
               size=$(wc -c < "epg_teil_${i}.xml.gz")
-              echo "    {\"teil\": $i, \"datei\": \"epg_teil_${i}.xml.gz\", \"size\": $size}" >> index.json
+              echo "    {\"part\": $i, \"file\": \"epg_teil_${i}.xml.gz\", \"size\": $size}" >> index.json
             fi
           done
           
           echo "  ]}" >> index.json
           
           echo ""
-          echo "✅ Fertig! Folgende Dateien wurden erstellt:"
+          echo "✅ Fertig! Erstellte Dateien:"
           ls -la
           
           cd ../../..
       
-      - name: Zu Cloudflare deployen
+      - name: Zu Cloudflare Pages deployen
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -113,3 +104,19 @@ jobs:
           projectName: "iptv-epg-data"
           directory: public
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Abschluss
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "✅ EPG-Update erfolgreich!"
+          echo "=========================================="
+          echo ""
+          echo "📊 Verfügbar unter:"
+          echo "   • https://iptv-epg-data.pages.dev/epg/de/index.json"
+          for i in {1..27}; do
+            echo "   • https://iptv-epg-data.pages.dev/epg/de/epg_teil_${i}.xml.gz"
+          done
+          echo ""
+          echo "📦 Gesamtgröße: 708 MB aufgeteilt in 27 Teile"
+          echo "=========================================="
