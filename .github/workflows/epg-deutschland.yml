@@ -7,10 +7,10 @@ jobs:
   filter-german-epg:
     runs-on: ubuntu-latest
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # Node.js 24 aktivieren
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: 📦 Repository auschecken
-        uses: actions/checkout@v4  # ← Auf v4 aktualisiert
+        uses: actions/checkout@v4
         
       - name: EPG laden und filtern
         run: |
@@ -25,9 +25,21 @@ jobs:
           echo "⬇️ Lade EPG von iptvx.one..."
           curl -L -o epg.xml.gz "https://iptvx.one/epg/epg.xml.gz"
           
+          # Prüfen ob Download erfolgreich
+          if [ ! -f epg.xml.gz ] || [ ! -s epg.xml.gz ]; then
+            echo "❌ Download fehlgeschlagen!"
+            exit 1
+          fi
+          
           # Entpacken
           echo "📦 Entpacke EPG..."
           gunzip -f epg.xml.gz
+          
+          # Prüfen ob entpackt
+          if [ ! -f epg.xml ] || [ ! -s epg.xml ]; then
+            echo "❌ Entpacken fehlgeschlagen!"
+            exit 1
+          fi
           
           # Dateigröße anzeigen
           TOTAL_SIZE=$(wc -c < epg.xml)
@@ -38,16 +50,26 @@ jobs:
           echo "🔍 Filtere deutsche Sender..."
           echo "=========================================="
           
-          # Liste der deutschen Sender-Kennungen
-          PATTERNS="\.de|ard|zdf|rtl|sat\.1|prosieben|kabel|vox|ntv|dmax|tele5|sixx|kika|3sat|arte|phoenix|br|hr|mdr|ndr|rbb|swr|wdr|tagesschau|einsfestival"
+          # Liste der deutschen Sender-Kennungen (erweitert)
+          PATTERNS="\.de|ard|zdf|rtl|sat\.1|prosieben|kabel|vox|ntv|dmax|tele5|sixx|kika|3sat|arte|phoenix|br|hr|mdr|ndr|rbb|swr|wdr|tagesschau|einsfestival|zdfinfo|zdfneo|rtl2|superrtl|kabeleins|welt|n24|eurosport|sport1|mtv|nick|comedycentral|disney"
           
           # Channels extrahieren
           echo "📺 Extrahiere deutsche Channels..."
-          grep -E "channel[^>]*id=\"[^\"]*($PATTERNS)" epg.xml > public/epg/de/channels.xml.tmp || true
+          
+          # Bessere Extraktion: Ganze Channel-Blöcke holen
+          awk '/<channel/,/<\/channel>/' epg.xml | grep -E "id=\"[^\"]*($PATTERNS)" -B10 -A10 > public/epg/de/channels_raw.xml.tmp || true
           
           # Duplikate entfernen und bereinigen
-          sort -u public/epg/de/channels.xml.tmp > public/epg/de/channels.xml
-          rm public/epg/de/channels.xml.tmp
+          grep -E "<channel.*id=" public/epg/de/channels_raw.xml.tmp | sort -u > public/epg/de/channels.xml.tmp
+          
+          # Volle Channel-Blöcke extrahieren
+          > public/epg/de/channels.xml
+          while IFS= read -r channel_line; do
+            channel_id=$(echo "$channel_line" | grep -o 'id="[^"]*"' | head -1 | cut -d'"' -f2)
+            if [ ! -z "$channel_id" ]; then
+              awk "/<channel.*id=\"$channel_id\"/,/<\/channel>/" epg.xml >> public/epg/de/channels.xml
+            fi
+          done < public/epg/de/channels.xml.tmp
           
           CHANNEL_COUNT=$(grep -c "<channel" public/epg/de/channels.xml)
           echo "   ✅ $CHANNEL_COUNT deutsche Channels gefunden"
@@ -57,12 +79,11 @@ jobs:
           > public/epg/de/programmes.xml
           
           while IFS= read -r channel_line; do
-            # Channel-ID extrahieren
             channel_id=$(echo "$channel_line" | grep -o 'id="[^"]*"' | head -1 | cut -d'"' -f2)
             
             if [ ! -z "$channel_id" ] && [ "$channel_id" != "id=" ]; then
-              # Programme für diese Channel-ID finden
-              grep -E "programme[^>]*channel=\"$channel_id\"" epg.xml >> public/epg/de/programmes.xml.tmp || true
+              # Programme für diese Channel-ID finden (ganze Blöcke)
+              awk "/<programme.*channel=\"$channel_id\"/,/<\/programme>/" epg.xml >> public/epg/de/programmes.xml.tmp || true
             fi
           done < public/epg/de/channels.xml
           
@@ -91,7 +112,7 @@ EOF
           cat channels.xml >> gesamt.xml
           
           # Programme einfügen
-          if [ -f programmes.xml ]; then
+          if [ -f programmes.xml ] && [ -s programmes.xml ]; then
             cat programmes.xml >> gesamt.xml
           fi
           
@@ -130,9 +151,11 @@ EOF
 EOF
           
           echo "✅ index.json erstellt"
+          echo "   📄 Inhalt:"
+          cat index.json
           
           # Aufräumen
-          rm -f channels.xml programmes.xml 2>/dev/null || true
+          rm -f channels.xml programmes.xml channels_raw.xml.tmp channels.xml.tmp programmes.xml.tmp 2>/dev/null || true
           
           cd ../..
           
@@ -167,5 +190,8 @@ EOF
           if [ -f public/epg/de/gesamt.xml.gz ]; then
             SIZE=$(wc -c < public/epg/de/gesamt.xml.gz)
             echo "📦 Dateigröße: $(($SIZE / 1024 / 1024)) MB"
+            echo ""
+            echo "📊 Statistiken aus index.json:"
+            cat public/epg/de/index.json
           fi
           echo "=========================================="
