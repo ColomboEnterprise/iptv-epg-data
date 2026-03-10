@@ -10,14 +10,73 @@ jobs:
       - name: Repository auschecken
         uses: actions/checkout@v3
       
-      - name: EPG laden
+      - name: EPG laden und aufteilen
         run: |
           mkdir -p public/epg/de
-          curl -L -o public/epg/de/gesamt.xml.gz "https://iptvx.one/epg/epg.xml.gz"
-          echo "{\"status\":\"ok\",\"zeit\":\"$(date)\"}" > public/epg/de/index.json
+          
+          # EPG laden
+          echo "📡 Lade EPG..."
+          curl -L -o epg.xml.gz "https://iptvx.one/epg/epg.xml.gz"
+          
+          # Entpacken
+          echo "📦 Entpacke EPG..."
+          gunzip -f epg.xml.gz
+          
+          # Dateigröße prüfen
+          TOTAL_SIZE=$(wc -c < epg.xml)
+          echo "📊 Größe: $(($TOTAL_SIZE / 1024 / 1024)) MB"
+          
+          # In 20 MB Teile aufteilen (nach Zeilen)
+          echo "✂️ Teile EPG auf..."
+          cd public/epg/de
+          
+          # XML-Header für alle Teile
+          echo '<?xml version="1.0" encoding="UTF-8"?><tv>' > header.xml
+          echo '</tv>' > footer.xml
+          
+          # Hauptdatei in Blöcke aufteilen (je 50000 Zeilen)
+          split -l 50000 ../../epg.xml teil_ --additional-suffix=.xml
+          
+          # Jeden Teil mit Header/Footer versehen und komprimieren
+          part_num=1
+          for file in teil_*.xml; do
+            cat header.xml "$file" footer.xml > "epg_teil_$part_num.xml"
+            gzip -f "epg_teil_$part_num.xml"
+            rm "$file"
+            echo "   ✅ Teil $part_num: $(wc -c < epg_teil_$part_num.xml.gz) Bytes"
+            part_num=$((part_num + 1))
+          done
+          
+          rm header.xml footer.xml
+          
+          # Index.json mit allen Teilen
+          cat > index.json << EOF
+          {
+            "status": "ok",
+            "zeit": "$(date)",
+            "teile": $((part_num - 1)),
+            "dateien": [
+          EOF
+          
+          first=1
+          for i in $(seq 1 $((part_num - 1))); do
+            if [ $first -eq 1 ]; then
+              first=0
+            else
+              echo "," >> index.json
+            fi
+            size=$(wc -c < "epg_teil_${i}.xml.gz")
+            echo "    {\"teil\": $i, \"datei\": \"epg_teil_${i}.xml.gz\", \"size\": $size}" >> index.json
+          done
+          
+          echo "  ]}" >> index.json
+          
+          cd ../..
+          
+          echo "✅ EPG in $((part_num - 1)) Teile aufgeteilt"
           ls -la public/epg/de/
       
-      - name: Deploy zu Cloudflare
+      - name: Zu Cloudflare deployen
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
