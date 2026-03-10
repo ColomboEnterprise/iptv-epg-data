@@ -2,8 +2,9 @@ name: EPG für Deutschland generieren
 
 on:
   schedule:
+    # Läuft täglich um 2:00 Uhr UTC
     - cron: '0 2 * * *'
-  workflow_dispatch:
+  workflow_dispatch:  # Manueller Start
 
 jobs:
   generate-german-epg:
@@ -19,7 +20,7 @@ jobs:
         with:
           node-version: '18'
       
-      - name: 📡 iptv-org/epg klonen
+      - name: 📡 iptv-org/epg klonen und vorbereiten
         run: |
           echo "📡 Klone iptv-org/epg..."
           git clone --depth 1 https://github.com/iptv-org/epg.git
@@ -27,27 +28,33 @@ jobs:
           echo "📦 Installiere Abhängigkeiten..."
           npm install
           echo "✅ iptv-org/epg bereit"
+          cd ..
       
       - name: 🔍 Verfügbare Sites anzeigen
         run: |
-          cd epg
-          echo "📋 Verfügbare Sites (erste 20):"
-          ls -la sites/ | head -20
+          echo "📋 Verfügbare Sites im iptv-org/epg Repository:"
+          ls -la epg/sites/ | head -30
           
           echo ""
-          echo "📋 Deutsche Sites:"
-          ls -la sites/ | grep -i "de\|ard\|zdf\|rtl" | head -10
+          echo "📋 Deutsche/relevante Sites:"
+          ls -la epg/sites/ | grep -E "de|ard|zdf|rtl|sat|pro|kabel|vox|ntv|dmax|tele|sixx|kika|3sat|arte|phoenix|br|hr|mdr|ndr|rbb|swr|wdr" | head -20
+          
+          echo ""
+          echo "📋 Italienische Sites (als Vergleich):"
+          ls -la epg/sites/ | grep -E "it|rai|mediaset|la7" | head -10
       
-      - name: 🚀 EPG für mehrere Sender testen
+      - name: 🚀 EPG für verschiedene Sender testen
         run: |
           echo "🚀 Teste EPG-Generierung für verschiedene Sender..."
+          echo ""
           
           # Ausgabeverzeichnis erstellen
           mkdir -p public/epg/de
           
+          # Zurück ins Hauptverzeichnis
           cd epg
           
-          # Liste der zu testenden Sender (mit korrekten Site-Namen)
+          # Liste der zu testenden Sender (erweitert)
           SENDER=(
             "ard.de"
             "daserste.de"
@@ -55,46 +62,105 @@ jobs:
             "rtl.de"
             "sat1.de"
             "prosieben.de"
+            "kabeleins.de"
+            "vox.de"
+            "ntv.de"
+            "welt.de"
+            "dmax.de"
+            "tele5.de"
+            "sixx.de"
+            "rtl2.de"
+            "kika.de"
+            "3sat.de"
+            "arte.tv"
+            "phoenix.de"
+            "tagesschau24.de"
+            "einsfestival.de"
           )
+          
+          erfolgreich=0
+          fehlgeschlagen=0
+          gesamt=${#SENDER[@]}
+          
+          echo "================================================"
+          echo "📊 Teste $gesamt Sender"
+          echo "================================================"
           
           for sender in "${SENDER[@]}"; do
             echo ""
-            echo "=========================================="
-            echo "Teste: $sender"
-            echo "=========================================="
+            echo "------------------------------------------------"
+            echo "🔄 Teste: $sender"
+            echo "------------------------------------------------"
             
-            # Versuche EPG zu generieren
-            if npm run grab --- --site=$sender --output=../public/epg/de/$sender.xml --days=1 --maxConnections=1; then
-              echo "✅ Erfolg: $sender"
+            # Temporäre Ausgabedatei
+            output_file="../public/epg/de/$sender.xml"
+            
+            # Versuche EPG zu generieren (mit Timeout)
+            if npm run grab --- --site=$sender --output=$output_file --days=1 --maxConnections=1 --timeout=30000; then
+              echo "   ✅ Befehl erfolgreich"
               
-              # Zeige Dateigröße
-              if [ -f ../public/epg/de/$sender.xml ]; then
-                size=$(wc -c < ../public/epg/de/$sender.xml)
-                echo "   📦 Größe: $size Bytes"
+              # Prüfe ob Datei existiert und nicht leer ist
+              if [ -f "$output_file" ] && [ -s "$output_file" ]; then
+                size=$(wc -c < "$output_file")
+                echo "   📦 Datei erstellt: $size Bytes"
                 
-                # Zeige die ersten Zeilen der XML
-                echo "   📄 Preview:"
-                head -5 ../public/epg/de/$sender.xml
+                # Prüfe ob die Datei Programme enthält
+                if grep -q "<programme" "$output_file"; then
+                  prog_count=$(grep -c "<programme" "$output_file")
+                  echo "   📺 Programme gefunden: $prog_count"
+                  erfolgreich=$((erfolgreich + 1))
+                else
+                  echo "   ⚠️ Keine Programme in der Datei"
+                  fehlgeschlagen=$((fehlgeschlagen + 1))
+                fi
+                
+                # Zeige die ersten Zeilen als Preview
+                echo "   📄 Preview (erste 3 Zeilen):"
+                head -3 "$output_file" | sed 's/^/       /'
+              else
+                echo "   ❌ Datei wurde nicht erstellt oder ist leer"
+                fehlgeschlagen=$((fehlgeschlagen + 1))
               fi
             else
-              echo "❌ Fehler bei $sender"
+              echo "   ❌ Befehl fehlgeschlagen"
+              fehlgeschlagen=$((fehlgeschlagen + 1))
             fi
             
+            # Kurze Pause zwischen Requests
             sleep 2
           done
           
           cd ..
+          
+          echo ""
+          echo "================================================"
+          echo "📊 Testergebnisse:"
+          echo "   ✅ Erfolgreich: $erfolgreich"
+          echo "   ❌ Fehlgeschlagen: $fehlgeschlagen"
+          echo "   📁 Gesamt: $gesamt"
+          echo "================================================"
       
       - name: 📊 Erfolgreiche Dateien auflisten
         run: |
-          echo "📁 Generierte EPG-Dateien:"
-          ls -la public/epg/de/ || echo "Keine Dateien gefunden"
-          
-          echo ""
-          echo "📊 Anzahl XML-Dateien:"
-          find public/epg/de -name "*.xml" 2>/dev/null | wc -l
+          echo "📁 Generierte EPG-Dateien in public/epg/de/:"
+          if [ -d "public/epg/de" ]; then
+            ls -la public/epg/de/ | grep "\.xml" || echo "   Keine XML-Dateien gefunden"
+            
+            xml_count=$(find public/epg/de -name "*.xml" -type f 2>/dev/null | wc -l)
+            echo ""
+            echo "📊 Anzahl XML-Dateien: $xml_count"
+            
+            if [ "$xml_count" -gt 0 ]; then
+              echo ""
+              echo "📊 Dateigrößen:"
+              find public/epg/de -name "*.xml" -type f -exec ls -lh {} \; | awk '{print "   " $5 " " $9}'
+            fi
+          else
+            echo "   Verzeichnis public/epg/de/ existiert nicht"
+            mkdir -p public/epg/de
+          fi
       
-      - name: 📊 Index-Datei erstellen (falls vorhanden)
+      - name: 📝 Index-Datei erstellen
         run: |
           cd public/epg/de
           
@@ -104,12 +170,13 @@ jobs:
           if [ "$xml_count" -gt 0 ]; then
             echo "✅ $xml_count XML-Dateien gefunden"
             
-            # Erste Datei als Beispiel anzeigen
-            erste_datei=$(ls *.xml | head -1)
-            echo "📄 Beispiel: $erste_datei"
+            # Liste der Dateien anzeigen
+            echo "📄 Gefundene Dateien:"
+            ls -la *.xml
             
-            # Index.json erstellen (KOMPLETT IN EINER ZEILE!)
-            echo "{\"lastUpdate\":\"$(date -Iseconds)\",\"country\":\"Deutschland\",\"countryCode\":\"de\",\"totalChannels\":$xml_count,\"channels\":[" > index.json
+            # Index.json erstellen (komplette JSON in einer Zeile)
+            # Zuerst den Anfang
+            echo -n "{\"lastUpdate\":\"$(date -Iseconds)\",\"country\":\"Deutschland\",\"countryCode\":\"de\",\"totalChannels\":$xml_count,\"channels\":[" > index.json
             
             # Channels durchgehen
             first=1
@@ -117,36 +184,49 @@ jobs:
               if [ "$first" -eq 1 ]; then
                 first=0
               else
-                echo "," >> index.json
+                echo -n "," >> index.json
               fi
-              echo -n "{\"channel\":\"$(basename "$file" .xml)\",\"file\":\"$file\"}" >> index.json
+              channel_name=$(basename "$file" .xml)
+              file_size=$(wc -c < "$file")
+              echo -n "{\"channel\":\"$channel_name\",\"file\":\"$file\",\"size\":$file_size}" >> index.json
             done
             
+            # Ende
             echo "]}" >> index.json
             
             echo "✅ index.json erstellt"
             echo "📄 index.json Inhalt:"
-            cat index.json
+            cat index.json | head -5
+            echo "..."
           else
-            echo "⚠️ Keine XML-Dateien gefunden"
+            echo "⚠️ Keine XML-Dateien gefunden - erstelle Test-Datei"
             
-            # Erstelle eine Test-Datei manuell
-            echo "📝 Erstelle manuelle Test-XML..."
-            cat > test.xml << EOF
+            # Erstelle eine Test-XML-Datei
+            cat > test.xml << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
-<tv>
-  <channel id="ard.de">
-    <display-name>ARD Test</display-name>
+<tv generator-info-name="Test-Generator">
+  <channel id="test.sender">
+    <display-name>Test Sender</display-name>
+    <icon src="https://example.com/icon.png" />
   </channel>
-  <programme channel="ard.de" start="20240310060000 +0100" stop="20240310063000 +0100">
-    <title>Testprogramm</title>
+  <programme channel="test.sender" start="20240310060000 +0100" stop="20240310063000 +0100">
+    <title>Test-Programm 1</title>
+    <desc>Dies ist ein Testprogramm</desc>
+  </programme>
+  <programme channel="test.sender" start="20240310063000 +0100" stop="20240310070000 +0100">
+    <title>Test-Programm 2</title>
+    <desc>Weiteres Testprogramm</desc>
   </programme>
 </tv>
 EOF
+            
             echo "✅ test.xml erstellt"
             
             # Einfachen Index erstellen
-            echo "{\"lastUpdate\":\"$(date -Iseconds)\",\"country\":\"Deutschland\",\"countryCode\":\"de\",\"totalChannels\":1,\"channels\":[{\"channel\":\"test\",\"file\":\"test.xml\"}]}" > index.json
+            cat > index.json << EOF
+{"lastUpdate":"$(date -Iseconds)","country":"Deutschland","countryCode":"de","totalChannels":1,"channels":[{"channel":"test","file":"test.xml","size":$(wc -c < test.xml)}]}
+EOF
+            echo "✅ index.json erstellt (mit Testdaten)"
           fi
       
       - name: 📤 Nach Cloudflare Pages deployen
@@ -158,17 +238,28 @@ EOF
           directory: public
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: ✅ Abschluss
+      - name: ✅ Abschluss und nächste Schritte
         run: |
           echo ""
           echo "================================================"
           echo "✅ Workflow abgeschlossen!"
           echo "================================================"
-          echo "📊 Prüfen Sie:"
-          echo "   • https://iptv-epg-data.pages.dev/epg/de/index.json"
-          echo "   • https://iptv-epg-data.pages.dev/epg/de/test.xml"
+          echo ""
+          echo "📊 Ergebnisse:"
+          echo "   • XML-Dateien: $(find public/epg/de -name '*.xml' 2>/dev/null | wc -l)"
+          echo ""
+          echo "🔗 Verfügbar unter:"
+          echo "   • Index: https://iptv-epg-data.pages.dev/epg/de/index.json"
+          echo "   • Test:  https://iptv-epg-data.pages.dev/epg/de/test.xml"
+          if [ -f public/epg/de/ard.de.xml ]; then
+            echo "   • ARD:   https://iptv-epg-data.pages.dev/epg/de/ard.de.xml"
+          fi
           echo ""
           echo "📝 Nächste Schritte:"
-          echo "   1. Prüfen Sie die Logs oben - welche Sender funktionieren?"
-          echo "   2. Dann erweitern wir auf alle funktionierenden Sender"
+          echo "   1. Prüfen Sie die Logs oben - welche Sender haben funktioniert?"
+          echo "   2. Erstellen Sie eine Liste der erfolgreichen Sender"
+          echo "   3. Dann erweitern wir den Workflow auf ALLE funktionierenden Sender"
+          echo ""
+          echo "🔍 Tipp: In den Logs sehen Sie bei '📋 Deutsche/relevante Sites'"
+          echo "   welche Sender im iptv-org/epg Repository verfügbar sind."
           echo "================================================"
