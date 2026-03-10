@@ -1,95 +1,45 @@
-name: EPG von zuverlässiger Quelle
+name: EPG für Deutschland (gefiltert)
 
 on:
   workflow_dispatch:
 
 jobs:
-  fetch-epg:
+  filter-german-epg:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       
-      - name: EPG laden und komprimieren
+      - name: EPG laden und filtern
         run: |
-          # Verzeichnis erstellen
           mkdir -p public/epg/de
           
-          # EPG laden (als .gz, das ist schon komprimiert!)
-          echo "📡 Lade EPG von iptvx.one..."
-          curl -L -o public/epg/de/gesamt.xml.gz "https://iptvx.one/epg/epg.xml.gz"
+          # EPG laden
+          echo "📡 Lade EPG..."
+          curl -L -o epg.xml.gz "https://iptvx.one/epg/epg.xml.gz"
+          gunzip -f epg.xml.gz
           
-          # Größe prüfen
-          ORIG_SIZE=$(wc -c < public/epg/de/gesamt.xml.gz)
-          echo "📦 Komprimierte Größe: $(($ORIG_SIZE / 1024 / 1024)) MB"
+          # Nur deutsche Sender filtern (ard.de, zdf.de, etc.)
+          echo "🔍 Filtere deutsche Sender..."
           
-          # In Cloudflare-kompatible Größe aufteilen (max 25 MB pro Teil)
-          if [ $ORIG_SIZE -gt 26214400 ]; then
-            echo "📦 Datei zu groß, teile auf..."
-            
-            # Entpacken für Aufteilung
-            gunzip -f public/epg/de/gesamt.xml.gz
-            
-            # In 20 MB Teile aufteilen (nach Zeilen, nicht binär)
-            cd public/epg/de
-            split -l 100000 gesamt.xml teil_ --additional-suffix=.xml
-            
-            # Teile einzeln komprimieren
-            for file in teil_*.xml; do
-              gzip -f "$file"
-              echo "   ✅ ${file}.gz erstellt"
-            done
-            
-            # Original entfernen
-            rm gesamt.xml
-            
-            # Index mit allen Teilen erstellen
-            cat > index.json << EOF
-            {
-              "lastUpdate": "$(date -Iseconds)",
-              "source": "iptvx.one",
-              "totalSize": $ORIG_SIZE,
-              "parts": $(ls teil_*.xml.gz 2>/dev/null | wc -l),
-              "files": [
-            EOF
-            
-            first=1
-            for file in teil_*.xml.gz; do
-              if [ $first -eq 1 ]; then
-                first=0
-              else
-                echo "," >> index.json
-              fi
-              size=$(wc -c < "$file")
-              echo "    {\"file\": \"$file\", \"size\": $size}" >> index.json
-            done
-            
-            echo "  ]}" >> index.json
-            
-            cd ../..
-          else
-            echo "✅ Dateigröße OK"
-            # Index für einzelne Datei
-            cd public/epg/de
-            cat > index.json << EOF
-            {
-              "lastUpdate": "$(date -Iseconds)",
-              "source": "iptvx.one",
-              "file": "gesamt.xml.gz",
-              "size": $ORIG_SIZE
-            }
-EOF
-            cd ../..
-          fi
+          # Deutsche Sender-IDs (typische Endungen)
+          cat epg.xml | grep -E "(channel.*\.de|channel.*ard|channel.*zdf|channel.*rtl)" -A 5 -B 5 > public/epg/de/channels.xml
           
-          echo ""
-          echo "📊 Finale Dateien:"
-          ls -la public/epg/de/
-      
-      - name: Zu Cloudflare deployen
-        uses: cloudflare/pages-action@v1
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: "iptv-epg-data"
-          directory: public
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          # Dazugehörige Programme
+          while read -r channel; do
+            channel_id=$(echo "$channel" | grep -o 'id="[^"]*"' | cut -d'"' -f2)
+            if [ ! -z "$channel_id" ]; then
+              grep -E "channel=\"$channel_id\"" epg.xml >> public/epg/de/programmes.xml
+            fi
+          done < public/epg/de/channels.xml
+          
+          # Gesamt-XML bauen
+          cd public/epg/de
+          echo '<?xml version="1.0" encoding="UTF-8"?><tv>' > gesamt.xml
+          cat channels.xml >> gesamt.xml
+          cat programmes.xml >> gesamt.xml
+          echo '</tv>' >> gesamt.xml
+          
+          # Komprimieren
+          gzip -f gesamt.xml
+          
+          echo "✅ Deutsche EPG erstellt: $(wc -c < gesamt.xml.gz) Bytes"
