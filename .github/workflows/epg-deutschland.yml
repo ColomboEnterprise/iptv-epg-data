@@ -8,7 +8,7 @@ on:
 jobs:
   generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 60  # Längere Zeit für viele Sender
+    timeout-minutes: 60  # Längere Zeit für mehr Sender
     
     steps:
       - uses: actions/checkout@v3
@@ -30,10 +30,9 @@ jobs:
           # Verzeichnis erstellen
           mkdir -p public/epg/de
           
-          # ALLE deutschen Sender aus iptv-org/epg
-          # Quelle: https://github.com/iptv-org/epg/tree/master/sites
+          # ALLE deutschen Sender (erweiterte Liste)
           SENDER=(
-            # Öffentlich-Rechtliche (ARD)
+            # Öffentlich-Rechtliche
             "ard.de"
             "daserste.de"
             "tagesschau24.de"
@@ -53,7 +52,7 @@ jobs:
             "zdfinfo.de"
             "zdfneo.de"
             
-            # Dritte Programme & Spezial
+            # Dritte & Spezial
             "3sat.de"
             "arte.tv"
             "phoenix.de"
@@ -78,7 +77,7 @@ jobs:
             "prosieben-maxx.de"
             "kabel-eins-doku.de"
             
-            # Weitere private Sender
+            # Weitere private
             "welt.de"
             "dmax.de"
             "tele5.de"
@@ -103,7 +102,7 @@ jobs:
             "tv-muenchen.de"
             "rfo.de"
             
-            # Österreich (auch oft in deutschen Playlists)
+            # Österreich (für deutschsprachige Playlists)
             "orf.at"
             "orf1.at"
             "orf2.at"
@@ -120,21 +119,21 @@ jobs:
             "rsi.ch"
           )
           
-          gesamt=${#SENDER[@]}
-          aktuell=0
-          erfolgreich=0
-          
           echo "================================================"
-          echo "📊 Generiere EPG für $gesamt deutsche Sender"
+          echo "📊 Generiere EPG für ${#SENDER[@]} Sender"
           echo "================================================"
           
           cd epg
+          
+          erfolgreich=0
+          fehlgeschlagen=0
+          aktuell=0
           
           for sender in "${SENDER[@]}"; do
             aktuell=$((aktuell + 1))
             echo ""
             echo "------------------------------------------------"
-            echo "[$aktuell/$gesamt] Generiere $sender..."
+            echo "[$aktuell/${#SENDER[@]}] Generiere: $sender"
             echo "------------------------------------------------"
             
             output_file="../public/epg/de/$sender.xml"
@@ -146,10 +145,12 @@ jobs:
                 echo "   ✅ Erfolg - ${size} Bytes, ${prog_count} Programme"
                 erfolgreich=$((erfolgreich + 1))
               else
-                echo "   ⚠️ Datei leer"
+                echo "   ⚠️ Datei ist leer"
+                fehlgeschlagen=$((fehlgeschlagen + 1))
               fi
             else
-              echo "   ❌ Fehler"
+              echo "   ❌ Fehler beim Generieren"
+              fehlgeschlagen=$((fehlgeschlagen + 1))
             fi
             
             sleep 2
@@ -160,26 +161,28 @@ jobs:
           echo ""
           echo "================================================"
           echo "📊 Generierung abgeschlossen:"
-          echo "   ✅ Erfolgreich: $erfolgreich von $gesamt"
+          echo "   ✅ Erfolgreich: $erfolgreich"
+          echo "   ❌ Fehlgeschlagen: $fehlgeschlagen"
+          echo "   📁 Gesamt: ${#SENDER[@]}"
           echo "================================================"
       
       - name: Gesamt-EPG und Index erstellen
         run: |
           cd public/epg/de
           
-          echo "📁 Verarbeite XML-Dateien..."
+          echo ""
+          echo "📊 Erstelle gesamt.xml und index.json..."
           
           # Gesamt-XML erstellen
           echo '<?xml version="1.0" encoding="UTF-8"?>' > gesamt.xml
           echo '<tv generator-info-name="IPTV-EPG-Generator" generator-info-url="https://github.com/iptv-org/epg">' >> gesamt.xml
           
-          # Channels und Programme sammeln
           channel_count=0
           programme_count=0
           
           for file in *.xml; do
             if [ "$file" != "gesamt.xml" ] && [ -s "$file" ]; then
-              # Channels extrahieren (ohne XML-Header)
+              # Channels und Programme extrahieren
               grep -v "<?xml" "$file" | grep -v "</tv>" >> gesamt.xml 2>/dev/null || true
               channel_count=$((channel_count + 1))
               
@@ -190,11 +193,6 @@ jobs:
           done
           
           echo '</tv>' >> gesamt.xml
-          
-          echo "✅ gesamt.xml erstellt"
-          echo "   📺 Kanäle: $channel_count"
-          echo "   📺 Programme: $programme_count"
-          echo "   📦 Größe: $(wc -c < gesamt.xml) Bytes"
           
           # Index.json erstellen
           cat > index.json << EOF
@@ -232,9 +230,10 @@ EOF
           
           echo "  ]}" >> index.json
           
+          echo "✅ gesamt.xml erstellt"
           echo "✅ index.json erstellt"
           echo ""
-          echo "📊 Zusammenfassung:"
+          echo "📊 Statistik:"
           echo "   • Kanäle: $channel_count"
           echo "   • Programme: $programme_count"
           echo "   • Gesamt-XML: $(wc -c < gesamt.xml) Bytes"
@@ -259,9 +258,10 @@ EOF
           echo "   • https://iptv-epg-data.pages.dev/epg/de/gesamt.xml"
           echo "   • https://iptv-epg-data.pages.dev/epg/de/index.json"
           echo ""
-          echo "📊 Statistik:"
-          echo "   • $(grep -c "<channel" public/epg/de/gesamt.xml 2>/dev/null || echo "0") Kanäle"
-          echo "   • $(grep -c "<programme" public/epg/de/gesamt.xml 2>/dev/null || echo "0") Programme"
+          echo "📊 Statistik aus index.json:"
+          if [ -f public/epg/de/index.json ]; then
+            cat public/epg/de/index.json | grep -E "totalChannels|totalProgrammes" || echo "   Keine Statistik verfügbar"
+          fi
           echo ""
           echo "⏰ Nächstes Update: Morgen um 2:00 UTC"
           echo "================================================"
