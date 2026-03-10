@@ -6,40 +6,166 @@ on:
 jobs:
   filter-german-epg:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # Node.js 24 aktivieren
     steps:
-      - uses: actions/checkout@v3
-      
+      - name: 📦 Repository auschecken
+        uses: actions/checkout@v4  # ← Auf v4 aktualisiert
+        
       - name: EPG laden und filtern
         run: |
+          echo "=========================================="
+          echo "📡 EPG für Deutschland wird geladen..."
+          echo "=========================================="
+          
+          # Verzeichnis erstellen
           mkdir -p public/epg/de
           
-          # EPG laden
-          echo "📡 Lade EPG..."
+          # EPG von iptvx.one laden
+          echo "⬇️ Lade EPG von iptvx.one..."
           curl -L -o epg.xml.gz "https://iptvx.one/epg/epg.xml.gz"
+          
+          # Entpacken
+          echo "📦 Entpacke EPG..."
           gunzip -f epg.xml.gz
           
-          # Nur deutsche Sender filtern (ard.de, zdf.de, etc.)
+          # Dateigröße anzeigen
+          TOTAL_SIZE=$(wc -c < epg.xml)
+          echo "📊 Gesamtgröße: $(($TOTAL_SIZE / 1024 / 1024)) MB"
+          
+          # Deutsche Sender filtern
+          echo ""
           echo "🔍 Filtere deutsche Sender..."
+          echo "=========================================="
           
-          # Deutsche Sender-IDs (typische Endungen)
-          cat epg.xml | grep -E "(channel.*\.de|channel.*ard|channel.*zdf|channel.*rtl)" -A 5 -B 5 > public/epg/de/channels.xml
+          # Liste der deutschen Sender-Kennungen
+          PATTERNS="\.de|ard|zdf|rtl|sat\.1|prosieben|kabel|vox|ntv|dmax|tele5|sixx|kika|3sat|arte|phoenix|br|hr|mdr|ndr|rbb|swr|wdr|tagesschau|einsfestival"
           
-          # Dazugehörige Programme
-          while read -r channel; do
-            channel_id=$(echo "$channel" | grep -o 'id="[^"]*"' | cut -d'"' -f2)
-            if [ ! -z "$channel_id" ]; then
-              grep -E "channel=\"$channel_id\"" epg.xml >> public/epg/de/programmes.xml
+          # Channels extrahieren
+          echo "📺 Extrahiere deutsche Channels..."
+          grep -E "channel[^>]*id=\"[^\"]*($PATTERNS)" epg.xml > public/epg/de/channels.xml.tmp || true
+          
+          # Duplikate entfernen und bereinigen
+          sort -u public/epg/de/channels.xml.tmp > public/epg/de/channels.xml
+          rm public/epg/de/channels.xml.tmp
+          
+          CHANNEL_COUNT=$(grep -c "<channel" public/epg/de/channels.xml)
+          echo "   ✅ $CHANNEL_COUNT deutsche Channels gefunden"
+          
+          # Dazugehörige Programme extrahieren
+          echo "📺 Extrahiere Programme für deutsche Channels..."
+          > public/epg/de/programmes.xml
+          
+          while IFS= read -r channel_line; do
+            # Channel-ID extrahieren
+            channel_id=$(echo "$channel_line" | grep -o 'id="[^"]*"' | head -1 | cut -d'"' -f2)
+            
+            if [ ! -z "$channel_id" ] && [ "$channel_id" != "id=" ]; then
+              # Programme für diese Channel-ID finden
+              grep -E "programme[^>]*channel=\"$channel_id\"" epg.xml >> public/epg/de/programmes.xml.tmp || true
             fi
           done < public/epg/de/channels.xml
           
-          # Gesamt-XML bauen
-          cd public/epg/de
-          echo '<?xml version="1.0" encoding="UTF-8"?><tv>' > gesamt.xml
-          cat channels.xml >> gesamt.xml
-          cat programmes.xml >> gesamt.xml
-          echo '</tv>' >> gesamt.xml
+          # Duplikate in Programmen entfernen
+          if [ -f public/epg/de/programmes.xml.tmp ]; then
+            sort -u public/epg/de/programmes.xml.tmp > public/epg/de/programmes.xml
+            rm public/epg/de/programmes.xml.tmp
+          fi
           
-          # Komprimieren
+          PROG_COUNT=$(grep -c "<programme" public/epg/de/programmes.xml 2>/dev/null || echo "0")
+          echo "   ✅ $PROG_COUNT Programme für deutsche Channels gefunden"
+          
+          # Gesamt-XML erstellen
+          echo ""
+          echo "📦 Erstelle gesamt.xml..."
+          echo "=========================================="
+          
+          cd public/epg/de
+          
+          cat > gesamt.xml << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<tv generator-info-name="IPTV-EPG-Generator" generator-info-url="https://github.com/iptv-org/epg">
+EOF
+          
+          # Channels einfügen
+          cat channels.xml >> gesamt.xml
+          
+          # Programme einfügen
+          if [ -f programmes.xml ]; then
+            cat programmes.xml >> gesamt.xml
+          fi
+          
+          echo "</tv>" >> gesamt.xml
+          
+          # Statistik
+          FINAL_SIZE=$(wc -c < gesamt.xml)
+          FINAL_CHANNELS=$(grep -c "<channel" gesamt.xml)
+          FINAL_PROGS=$(grep -c "<programme" gesamt.xml)
+          
+          echo "✅ gesamt.xml erstellt:"
+          echo "   📊 Größe: $(($FINAL_SIZE / 1024 / 1024)) MB"
+          echo "   📺 Kanäle: $FINAL_CHANNELS"
+          echo "   📺 Programme: $FINAL_PROGS"
+          
+          # Komprimieren für Cloudflare
+          echo ""
+          echo "📦 Komprimiere für Cloudflare..."
           gzip -f gesamt.xml
           
-          echo "✅ Deutsche EPG erstellt: $(wc -c < gesamt.xml.gz) Bytes"
+          GZIP_SIZE=$(wc -c < gesamt.xml.gz)
+          echo "   ✅ gesamt.xml.gz: $(($GZIP_SIZE / 1024 / 1024)) MB"
+          
+          # Index.json erstellen
+          cat > index.json << EOF
+{
+  "lastUpdate": "$(date -Iseconds)",
+  "country": "Deutschland",
+  "countryCode": "de",
+  "totalChannels": $FINAL_CHANNELS,
+  "totalProgrammes": $FINAL_PROGS,
+  "fileSize": $FINAL_SIZE,
+  "fileSizeCompressed": $GZIP_SIZE,
+  "source": "iptvx.one (gefiltert)"
+}
+EOF
+          
+          echo "✅ index.json erstellt"
+          
+          # Aufräumen
+          rm -f channels.xml programmes.xml 2>/dev/null || true
+          
+          cd ../..
+          
+          echo ""
+          echo "=========================================="
+          echo "✅ EPG-Filterung abgeschlossen!"
+          echo "=========================================="
+          echo ""
+          echo "📊 Finale Dateien:"
+          ls -la public/epg/de/
+      
+      - name: 📤 Zu Cloudflare Pages deployen
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: "iptv-epg-data"
+          directory: public
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: ✅ Abschluss
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "✅ EPG-Update abgeschlossen!"
+          echo "=========================================="
+          echo ""
+          echo "📊 Verfügbar unter:"
+          echo "   • https://iptv-epg-data.pages.dev/epg/de/gesamt.xml.gz"
+          echo "   • https://iptv-epg-data.pages.dev/epg/de/index.json"
+          echo ""
+          if [ -f public/epg/de/gesamt.xml.gz ]; then
+            SIZE=$(wc -c < public/epg/de/gesamt.xml.gz)
+            echo "📦 Dateigröße: $(($SIZE / 1024 / 1024)) MB"
+          fi
+          echo "=========================================="
