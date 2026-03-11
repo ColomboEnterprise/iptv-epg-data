@@ -1,7 +1,7 @@
 name: EPG Deutschland
 
 on:
-  workflow_dispatch,
+  workflow_dispatch:
   schedule:
     - cron: '0 2 * * *'
 
@@ -58,13 +58,13 @@ jobs:
       - name: Erstelle index.json
         run: |
           cd public/epg/de
-          cat > index.json << EOF
+          cat > index.json << 'EOF'
 {
   "lastUpdate": "$(date -Iseconds)",
   "country": "Deutschland",
   "countryCode": "de",
-  "totalChannels": $(grep -c '<channel' gesamt.xml),
-  "totalProgrammes": $(grep -c '<programme' gesamt.xml),
+  "totalChannels": 0,
+  "totalProgrammes": 0,
   "channels": [
     {
       "channel": "gesamt",
