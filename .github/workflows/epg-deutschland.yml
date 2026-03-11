@@ -9,7 +9,7 @@ on:
 jobs:
   generate-german-epg:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120  # Länger für alle Sender
     
     steps:
       - name: 📦 Repository auschecken
@@ -29,48 +29,204 @@ jobs:
           npm install
           echo "✅ iptv-org/epg bereit"
       
-      - name: 🚀 EPG für ARD testen
+      - name: 🚀 EPG für ALLE deutschen Sender generieren
         run: |
-          echo "🚀 Teste EPG-Generierung für ARD..."
+          echo "🚀 Starte EPG-Generierung für ALLE deutschen Sender..."
+          echo ""
           
           # Ausgabeverzeichnis erstellen
           mkdir -p public/epg/de
           
           cd epg
           
-          # Nur ARD testen
-          echo "Generiere EPG für ard.de..."
-          npm run grab --- --site=ard.de --output=../public/epg/de/ard.de.xml --days=1
+          # ALLE deutschen Sender von iptv-org
+          SENDER=(
+            # Öffentlich-Rechtliche (ARD)
+            "ard.de"
+            "daserste.de"
+            "tagesschau24.de"
+            "einsfestival.de"
+            "einsplus.de"
+            "br.de"
+            "hr-fernsehen.de"
+            "mdr.de"
+            "ndr.de"
+            "rbb-online.de"
+            "sr.de"
+            "swr.de"
+            "wdr.de"
+            "radiobremen.de"
+            
+            # Öffentlich-Rechtliche (ZDF)
+            "zdf.de"
+            "zdfinfo.de"
+            "zdfneo.de"
+            "3sat.de"
+            "arte.tv"
+            "kika.de"
+            "phoenix.de"
+            
+            # RTL Group
+            "rtl.de"
+            "rtl2.de"
+            "rtl-crime.de"
+            "rtl-living.de"
+            "rtl-passion.de"
+            "superrtl.de"
+            "vox.de"
+            "ntv.de"
+            "nitro.de"
+            
+            # ProSiebenSat.1
+            "prosieben.de"
+            "sat1.de"
+            "kabeleins.de"
+            "sixx.de"
+            "prosieben-maxx.de"
+            "sat1-gold.de"
+            "kabel-eins-doku.de"
+            
+            # Welt / N24
+            "welt.de"
+            
+            # Discovery / DMAX
+            "dmax.de"
+            "tlc.de"
+            
+            # Tele5
+            "tele5.de"
+            
+            # Sport
+            "eurosport.de"
+            "sport1.de"
+            
+            # Musik
+            "mtv.de"
+            "vh1.de"
+            "deluxemusic.de"
+            
+            # Nachrichten
+            "dw.com"
+            
+            # Regional
+            "rheinmain-tv.de"
+            "tvberlin.de"
+            "muenchen.tv"
+            "hamburg1.de"
+            "frankenfernsehen.de"
+            "rtl-hamburg.de"
+            "rtl-nrw.de"
+            "rtl-hessen.de"
+            "rtl-bayern.de"
+            
+            # Weitere
+            "bibel-tv.de"
+            "hopechannel.de"
+            "ewtn.de"
+            "qvc.de"
+            "hse24.de"
+          )
+          
+          gesamt=${#SENDER[@]}
+          aktuell=0
+          erfolgreich=0
+          
+          echo "================================================"
+          echo "📊 Generiere EPG für $gesamt Sender"
+          echo "================================================"
+          
+          # Leeres Array für erfolgreiche Sender
+          erfolgreiche_sender=()
+          
+          for sender in "${SENDER[@]}"; do
+            aktuell=$((aktuell + 1))
+            echo ""
+            echo "------------------------------------------------"
+            echo "[$aktuell/$gesamt] Generiere EPG für: $sender"
+            echo "------------------------------------------------"
+            
+            # EPG für diesen Sender generieren
+            if npm run grab --- --site=$sender --output=../public/epg/de/$sender.xml --days=7 --maxConnections=3 --timeout=30000; then
+              echo "✅ Erfolg: $sender"
+              erfolgreich=$((erfolgreich + 1))
+              erfolgreiche_sender+=("$sender")
+              
+              # Zeige Dateigröße
+              if [ -f ../public/epg/de/$sender.xml ]; then
+                size=$(wc -c < ../public/epg/de/$sender.xml)
+                echo "   📦 Dateigröße: $size Bytes"
+              fi
+            else
+              echo "⚠️ Fehler bei $sender - überspringe"
+            fi
+            
+            # Kleine Pause zwischen den Sendern
+            sleep 2
+          done
           
           cd ..
           
-          echo "✅ Test abgeschlossen"
+          echo ""
+          echo "================================================"
+          echo "📊 Generierung abgeschlossen:"
+          echo "   ✅ Erfolgreich: $erfolgreich von $gesamt"
+          echo "   📁 Verzeichnis: public/epg/de/"
+          echo "================================================"
       
       - name: 📊 Index-Datei erstellen
         run: |
           cd public/epg/de
           
-          # Prüfe ob Datei existiert
-          if [ -f "ard.de.xml" ]; then
-            echo "✅ ard.de.xml gefunden"
+          # Zähle XML-Dateien (ohne andere Dateien)
+          xml_dateien=$(ls *.xml 2>/dev/null | wc -l)
+          echo "📁 Gefundene XML-Dateien: $xml_dateien"
+          
+          if [ "$xml_dateien" -gt 0 ]; then
+            echo "✅ XML-Dateien gefunden"
             
-            # Index.json erstellen (ALLE IN EINER ZEILE!)
-            echo "{\"lastUpdate\":\"$(date -Iseconds)\",\"country\":\"Deutschland\",\"countryCode\":\"de\",\"totalChannels\":1,\"channels\":[{\"channel\":\"ard.de\",\"file\":\"ard.de.xml\"}]}" > index.json
+            # Baue JSON-String für Channels
+            channels_json=""
+            first=1
+            for file in *.xml; do
+              if [ "$first" -eq 1 ]; then
+                first=0
+                channels_json="{\"channel\":\"${file%.xml}\",\"file\":\"$file\"}"
+              else
+                channels_json="$channels_json, {\"channel\":\"${file%.xml}\",\"file\":\"$file\"}"
+              fi
+            done
+            
+            # Index.json in EINER Zeile erstellen
+            echo "{\"lastUpdate\":\"$(date -Iseconds)\",\"country\":\"Deutschland\",\"countryCode\":\"de\",\"totalChannels\":$xml_dateien,\"channels\":[$channels_json]}" > index.json
             
             echo "✅ index.json erstellt"
+            echo "   📊 Kanäle: $xml_dateien"
           else
-            echo "⚠️ Keine XML-Datei gefunden"
+            echo "⚠️ Keine XML-Dateien gefunden"
+            # Leeren Index erstellen
+            echo "{\"lastUpdate\":\"$(date -Iseconds)\",\"country\":\"Deutschland\",\"countryCode\":\"de\",\"totalChannels\":0,\"channels\":[]}" > index.json
             exit 1
           fi
       
       - name: 📋 Generierte Dateien anzeigen
         run: |
           echo "📁 Inhalt von public/epg/de/:"
-          ls -la public/epg/de/
+          ls -la public/epg/de/ | head -20
           
           echo ""
           echo "📄 Inhalt von index.json:"
           cat public/epg/de/index.json
+          
+          echo ""
+          echo "📊 Erste 3 XML-Dateien (Preview):"
+          for file in public/epg/de/*.xml; do
+            if [ -f "$file" ]; then
+              echo ""
+              echo "📄 $(basename "$file"):"
+              head -5 "$file"
+              break  # Nur erste Datei anzeigen
+            fi
+          done
       
       - name: 📤 Nach Cloudflare Pages deployen
         uses: cloudflare/pages-action@v1
@@ -85,11 +241,13 @@ jobs:
         run: |
           echo ""
           echo "================================================"
-          echo "✅ EPG-Test erfolgreich abgeschlossen!"
+          echo "✅ EPG-Update für ALLE deutschen Sender abgeschlossen!"
           echo "================================================"
           echo "📊 Verfügbar unter:"
-          echo "   • https://iptv-epg-data.pages.dev/epg/de/ard.de.xml"
           echo "   • https://iptv-epg-data.pages.dev/epg/de/index.json"
+          echo "   • https://iptv-epg-data.pages.dev/epg/de/ard.de.xml"
+          echo "   • https://iptv-epg-data.pages.dev/epg/de/zdf.de.xml"
+          echo "   • und alle anderen Sender"
           echo ""
-          echo "⏰ Nächster Schritt: Auf alle Sender erweitern"
+          echo "⏰ Nächstes Update: Morgen um 2:00 UTC"
           echo "================================================"
