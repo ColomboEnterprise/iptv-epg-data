@@ -1,31 +1,358 @@
-name: EPG
+name: EPG für alle deutschen Sender
 
 on:
-  workflow_dispatch
+  schedule:
+    # Läuft täglich um 2:00 Uhr UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Manueller Start
 
 jobs:
-  build:
+  generate-german-epg:
     runs-on: ubuntu-latest
+    timeout-minutes: 120  # 2 Stunden für alle Sender
+    
     steps:
-      - uses: actions/checkout@v3
+      - name: 📦 Repository auschecken
+        uses: actions/checkout@v3
       
-      - name: Erstelle Ordner
-        run: mkdir -p public/epg/de
+      - name: 🔧 Node.js einrichten
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
       
-      - name: Lade EPG
+      - name: 📡 iptv-org/epg klonen
         run: |
-          curl -L -o public/epg/de/ard.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ARD.xml"
-          curl -L -o public/epg/de/zdf.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ZDF.xml"
-          curl -L -o public/epg/de/rtl.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/RTL.xml"
-          curl -L -o public/epg/de/sat1.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/SAT.1.xml"
+          echo "📡 Klone iptv-org/epg..."
+          git clone --depth 1 https://github.com/iptv-org/epg.git
+          cd epg
+          echo "📦 Installiere Abhängigkeiten..."
+          npm install
+          echo "✅ iptv-org/epg bereit"
       
-      - name: Erstelle index
-        run: echo '{"test":"ok"}' > public/epg/de/index.json
+      - name: 🚀 EPG für ALLE deutschen Sender generieren
+        run: |
+          echo "🚀 Starte EPG-Generierung für ALLE deutschen Sender..."
+          echo ""
+          
+          # Ausgabeverzeichnis erstellen
+          mkdir -p public/epg/de
+          
+          cd epg
+          
+          # ALLE deutschen Sender von iptv-org
+          # Quelle: https://github.com/iptv-org/epg/tree/master/sites
+          SENDER=(
+            # Öffentlich-Rechtliche (ARD)
+            "ard.de"
+            "daserste.de"
+            "tagesschau24.de"
+            "einsfestival.de"
+            "einsplus.de"
+            "br.de"
+            "hr-fernsehen.de"
+            "mdr.de"
+            "ndr.de"
+            "rbb-online.de"
+            "sr.de"
+            "swr.de"
+            "wdr.de"
+            "radiobremen.de"
+            
+            # Öffentlich-Rechtliche (ZDF)
+            "zdf.de"
+            "zdfinfo.de"
+            "zdfneo.de"
+            "3sat.de"
+            "arte.tv"
+            "kika.de"
+            "phoenix.de"
+            
+            # RTL Group
+            "rtl.de"
+            "rtl2.de"
+            "rtl-crime.de"
+            "rtl-living.de"
+            "rtl-passion.de"
+            "superrtl.de"
+            "vox.de"
+            "ntv.de"
+            "nitro.de"
+            
+            # ProSiebenSat.1
+            "prosieben.de"
+            "sat1.de"
+            "kabeleins.de"
+            "sixx.de"
+            "prosieben-maxx.de"
+            "sat1-gold.de"
+            "kabel-eins-doku.de"
+            
+            # Welt / N24
+            "welt.de"
+            
+            # Discovery / DMAX
+            "dmax.de"
+            "tlc.de"
+            
+            # Tele5
+            "tele5.de"
+            
+            # Sport
+            "eurosport.de"
+            "sport1.de"
+            
+            # Musik
+            "mtv.de"
+            "vh1.de"
+            "deluxemusic.de"
+            
+            # Nachrichten
+            "dw.com"
+            
+            # Regional
+            "rheinmain-tv.de"
+            "tvberlin.de"
+            "muenchen.tv"
+            "hamburg1.de"
+            "frankenfernsehen.de"
+            "rtl-hamburg.de"
+            "rtl-nrw.de"
+            "rtl-hessen.de"
+            "rtl-bayern.de"
+            
+            # Weitere
+            "bibel-tv.de"
+            "hopechannel.de"
+            "ewtn.de"
+            "qvc.de"
+            "hse24.de"
+          )
+          
+          gesamt=${#SENDER[@]}
+          aktuell=0
+          erfolgreich=0
+          fehlgeschlagen=0
+          
+          echo "================================================"
+          echo "📊 Generiere EPG für $gesamt Sender"
+          echo "================================================"
+          
+          # Erstelle eine Status-Datei
+          echo "{" > ../public/epg/de/status.json
+          echo "  \"startTime\": \"$(date -Iseconds)\"," >> ../public/epg/de/status.json
+          echo "  \"total\": $gesamt," >> ../public/epg/de/status.json
+          echo "  \"channels\": []" >> ../public/epg/de/status.json
+          echo "}" >> ../public/epg/de/status.json
+          
+          for sender in "${SENDER[@]}"; do
+            aktuell=$((aktuell + 1))
+            echo ""
+            echo "------------------------------------------------"
+            echo "[$aktuell/$gesamt] Generiere EPG für: $sender"
+            echo "------------------------------------------------"
+            
+            # EPG für diesen Sender generieren
+            if npm run grab --- --site=$sender --output=../public/epg/de/$sender.xml --days=7 --maxConnections=3 --timeout=30000; then
+              echo "✅ Erfolg: $sender"
+              erfolgreich=$((erfolgreich + 1))
+              
+              # Zeige Dateigröße
+              if [ -f ../public/epg/de/$sender.xml ]; then
+                size=$(wc -c < ../public/epg/de/$sender.xml)
+                echo "   📦 Dateigröße: $size Bytes"
+                
+                # Zeige Anzahl der Programme
+                prog_count=$(grep -c "<programme" ../public/epg/de/$sender.xml || echo "0")
+                echo "   📺 Programme: $prog_count"
+              fi
+            else
+              echo "⚠️ Fehler bei $sender"
+              fehlgeschlagen=$((fehlgeschlagen + 1))
+              
+              # Erstelle minimale Platzhalter-Datei
+              cat > ../public/epg/de/$sender.xml << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="$sender">
+    <display-name>${sender%.*}</display-name>
+  </channel>
+  <programme channel="$sender" start="$(date -u +'%Y%m%d%H%M%S') +0000" stop="$(date -u -d '+1 day' +'%Y%m%d%H%M%S') +0000">
+    <title>Keine EPG-Daten verfügbar</title>
+    <desc>Für diesen Sender konnten keine EPG-Daten geladen werden.</desc>
+  </programme>
+</tv>
+EOF
+              echo "   📦 Platzhalter-Datei erstellt"
+            fi
+            
+            # Status aktualisieren (als JSON-Array)
+            # Kleine Pause zwischen den Sendern
+            sleep 2
+          done
+          
+          cd ..
+          
+          echo ""
+          echo "================================================"
+          echo "📊 Generierung abgeschlossen:"
+          echo "   ✅ Erfolgreich: $erfolgreich"
+          echo "   ⚠️ Fehlgeschlagen: $fehlgeschlagen"
+          echo "   📁 Verzeichnis: public/epg/de/"
+          echo "================================================"
       
-      - name: Deploy
+      - name: 📊 Gesamt-EPG und Index erstellen
+        run: |
+          cd public/epg/de
+          
+          echo ""
+          echo "================================================"
+          echo "📊 Erstelle Gesamt-EPG und Index"
+          echo "================================================"
+          
+          # Prüfe ob XML-Dateien existieren
+          xml_dateien=$(ls *.xml 2>/dev/null | grep -v "gesamt.xml" | wc -l)
+          echo "📁 Gefundene XML-Dateien: $xml_dateien"
+          
+          if [ "$xml_dateien" -gt 0 ]; then
+            # Zeige die ersten 5 Dateien
+            echo "📄 Erste 5 Dateien:"
+            ls -la *.xml | grep -v "gesamt.xml" | head -5
+            
+            # Einzeldateien zu gesamt.xml zusammenführen
+            echo "🔄 Erstelle gesamt.xml..."
+            
+            # XML-Header schreiben
+            cat > gesamt.xml << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<tv generator-info-name="IPTV-EPG-Generator" generator-info-url="https://github.com/iptv-org/epg">
+EOF
+            
+            # Alle XML-Dateien durchgehen und programme/channel extrahieren
+            programme_gesamt=0
+            for file in *.xml; do
+              if [ "$file" != "gesamt.xml" ] && [ "$file" != "status.json" ]; then
+                echo "   ➕ Füge hinzu: $file"
+                # Extrahiere channel und programme Tags (ohne xml header)
+                grep -v "<?xml" "$file" | grep -v "</tv>" >> gesamt.xml || true
+                
+                # Zähle Programme
+                prog_count=$(grep -c "<programme" "$file" || echo "0")
+                programme_gesamt=$((programme_gesamt + prog_count))
+              fi
+            done
+            
+            # XML-Footer schreiben
+            echo "</tv>" >> gesamt.xml
+            
+            echo "✅ gesamt.xml erstellt"
+            
+            # Dateigröße anzeigen
+            gesamt_size=$(wc -c < gesamt.xml)
+            echo "   📦 Größe: $gesamt_size Bytes"
+            echo "   📊 Zeilen: $(wc -l < gesamt.xml)"
+            echo "   📺 Programme gesamt: $programme_gesamt"
+          else
+            echo "⚠️ Keine XML-Dateien gefunden!"
+            
+            # Erstelle minimale XML-Struktur
+            cat > gesamt.xml << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="ard.de">
+    <display-name>ARD</display-name>
+  </channel>
+  <programme channel="ard.de" start="$(date -u +'%Y%m%d%H%M%S') +0000" stop="$(date -u -d '+1 day' +'%Y%m%d%H%M%S') +0000">
+    <title>EPG-Generator wird ausgeführt</title>
+    <desc>Die EPG-Daten werden gerade generiert. Bitte in 30 Minuten erneut versuchen.</desc>
+  </programme>
+</tv>
+EOF
+            echo "⚠️ Platzhalter-XML erstellt"
+          fi
+          
+          # index.json erstellen
+          echo ""
+          echo "📊 Erstelle index.json..."
+          
+          cat > index.json << EOF
+{
+  "lastUpdate": "$(date -Iseconds)",
+  "country": "Deutschland",
+  "countryCode": "de",
+  "totalChannels": $xml_dateien,
+  "successful": $erfolgreich,
+  "failed": $fehlgeschlagen,
+  "channels": [
+EOF
+          
+          # Channels auflisten (ohne gesamt.xml)
+          first=1
+          for file in *.xml; do
+            if [ "$file" != "gesamt.xml" ] && [ "$file" != "status.json" ]; then
+              if [ "$first" -eq 1 ]; then
+                first=0
+              else
+                echo "," >> index.json
+              fi
+              channel_name=$(basename "$file" .xml)
+              file_size=$(wc -c < "$file" 2>/dev/null || echo "0")
+              prog_count=$(grep -c "<programme" "$file" 2>/dev/null || echo "0")
+              echo "    {\"channel\": \"$channel_name\", \"file\": \"$file\", \"size\": $file_size, \"programmes\": $prog_count}" >> index.json
+            fi
+          done
+          
+          cat >> index.json << EOF
+  
+  ]
+}
+EOF
+          
+          echo "✅ index.json erstellt"
+          
+          # Zusammenfassung
+          echo ""
+          echo "================================================"
+          echo "📊 ZUSAMMENFASSUNG:"
+          echo "================================================"
+          echo "   📁 Verzeichnis: $(pwd)"
+          echo "   📄 gesamt.xml: $(wc -c < gesamt.xml) Bytes"
+          echo "   📄 index.json: $(wc -c < index.json) Bytes"
+          echo "   📊 Kanäle: $xml_dateien"
+          echo "   📺 Programme: $programme_gesamt"
+          echo "   ✅ Erfolgreich: $erfolgreich"
+          echo "   ⚠️ Fehlgeschlagen: $fehlgeschlagen"
+          echo "================================================"
+      
+      - name: 📋 Dateien anzeigen
+        run: |
+          echo "📁 Inhalt von public/epg/de/:"
+          ls -la public/epg/de/ | head -20
+          
+          echo ""
+          echo "📄 Erste 10 Zeilen von index.json:"
+          head -10 public/epg/de/index.json
+      
+      - name: 📤 Nach Cloudflare Pages deployen
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: iptv-epg-data
+          projectName: "iptv-epg-data"
           directory: public
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: ✅ Abschluss
+        run: |
+          echo ""
+          echo "================================================"
+          echo "✅ EPG-Update für ALLE deutschen Sender abgeschlossen!"
+          echo "================================================"
+          echo "📊 Verfügbar unter:"
+          echo "   • https://iptv-epg-data.pages.dev/epg/de/gesamt.xml"
+          echo "   • https://iptv-epg-data.pages.dev/epg/de/index.json"
+          echo "   • https://iptv-epg-data.pages.dev/epg/de/ard.de.xml"
+          echo "   • https://iptv-epg-data.pages.dev/epg/de/zdf.de.xml"
+          echo "   • ... und alle anderen Sender"
+          echo ""
+          echo "⏰ Nächstes Update: Morgen um 2:00 UTC"
+          echo "================================================"
