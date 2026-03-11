@@ -11,61 +11,47 @@ jobs:
     timeout-minutes: 60
     
     steps:
-      - name: 📦 Repository auschecken
+      - name: Repository auschecken
         uses: actions/checkout@v3
       
-      - name: 🔧 Node.js einrichten
+      - name: Node.js einrichten
         uses: actions/setup-node@v3
         with:
           node-version: '18'
       
-      - name: 📡 EPG von alternativen Quellen laden
-        run: |
-          echo "🚀 Lade EPG von alternativen Quellen..."
-          
-          # Ausgabeverzeichnis erstellen
-          mkdir -p public/epg/de
-          
-          # Alternative 1: EPG von GitHub (weareblahs)
-          echo "📡 Versuche Quelle 1: weareblahs/epg..."
-          curl -L -o public/epg/de/ard.de.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ARD.xml" || echo "⚠️ Quelle 1 fehlgeschlagen"
-          
-          # Alternative 2: EPG von epg.ovh
-          echo "📡 Versuche Quelle 2: epg.ovh..."
-          curl -L -o public/epg/de/gesamt.xml "https://epg.ovh/epg.xml" || echo "⚠️ Quelle 2 fehlgeschlagen"
-          
-          # Alternative 3: IPTV-org XML
-          echo "📡 Versuche Quelle 3: iptv-org..."
-          curl -L -o public/epg/de/ard.de.xml "https://iptv-org.github.io/epg/guides/de/ard.iptv-org.xml" || echo "⚠️ Quelle 3 fehlgeschlagen"
-          
-          # Alternative 4: Open-EPG
-          echo "📡 Versuche Quelle 4: open-epg.com..."
-          curl -L -o public/epg/de/germany.xml "https://www.open-epg.com/files/germany1.xml.gz" || echo "⚠️ Quelle 4 fehlgeschlagen"
-          
-          # Wenn gz Datei, entpacken
-          if [ -f public/epg/de/germany.xml.gz ]; then
-            echo "📦 Entpacke germany.xml.gz..."
-            gunzip -c public/epg/de/germany.xml.gz > public/epg/de/open-epg.xml
-            rm public/epg/de/germany.xml.gz
-          fi
+      - name: Ausgabeverzeichnis erstellen
+        run: mkdir -p public/epg/de
       
-      - name: 📊 Prüfe und erstelle EPG-Dateien
+      - name: EPG von GitHub (weareblahs) laden
         run: |
-          cd public/epg/de
+          echo "📡 Lade EPG von weareblahs/epg..."
+          curl -L -o public/epg/de/ard.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ARD.xml" || echo "⚠️ weareblahs fehlgeschlagen"
+          curl -L -o public/epg/de/zdf.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ZDF.xml" || echo "⚠️ weareblahs fehlgeschlagen"
+          curl -L -o public/epg/de/rtl.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/RTL.xml" || echo "⚠️ weareblahs fehlgeschlagen"
+      
+      - name: EPG von epg.ovh laden
+        run: |
+          echo "📡 Lade EPG von epg.ovh..."
+          curl -L -o public/epg/de/epg-ovh.xml.gz "https://epg.ovh/epg.xml.gz" && gunzip -f public/epg/de/epg-ovh.xml.gz || echo "⚠️ epg.ovh fehlgeschlagen"
+      
+      - name: Prüfe vorhandene EPG-Dateien
+        run: |
+          echo "📁 Gefundene EPG-Dateien:"
+          ls -la public/epg/de/ || echo "Keine Dateien gefunden"
           
-          echo "📁 Gefundene Dateien:"
-          ls -la
+          # Zähle XML-Dateien
+          count=$(ls public/epg/de/*.xml 2>/dev/null | wc -l)
+          echo "📊 Anzahl XML-Dateien: $count"
           
-          # Wenn keine Dateien, erstelle Dummy-EPG
-          if [ ! -f *.xml ]; then
-            echo "⚠️ Keine EPG-Dateien gefunden. Erstelle Dummy-EPG..."
+          if [ "$count" -eq 0 ]; then
+            echo "⚠️ Keine EPG-Dateien gefunden - erstelle Dummy-EPG"
             
-            cat > dummy.xml << EOF
+            # Dummy-EPG mit aktuellen Zeiten
+            cat > public/epg/de/dummy.xml << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <tv>
   <channel id="ard.de">
     <display-name>ARD</display-name>
-    <display-name>Das Erste</display-name>
   </channel>
   <channel id="zdf.de">
     <display-name>ZDF</display-name>
@@ -73,103 +59,113 @@ jobs:
   <channel id="rtl.de">
     <display-name>RTL</display-name>
   </channel>
-  <programme channel="ard.de" start="$(date -u +'%Y%m%d%H%M%00') +0100" stop="$(date -u -d '+30 minutes' +'%Y%m%d%H%M%00') +0100">
+  <programme channel="ard.de" start="20250311200000 +0100" stop="20250311201500 +0100">
     <title>Tagesschau</title>
-    <desc>Die Nachrichten des Tages</desc>
-    <category>Nachrichten</category>
+    <desc>Die Nachrichten</desc>
   </programme>
-  <programme channel="ard.de" start="$(date -u -d '+30 minutes' +'%Y%m%d%H%M%00') +0100" stop="$(date -u -d '+60 minutes' +'%Y%m%d%H%M%00') +0100">
-    <title>Wetter</title>
-    <desc>Der Wetterbericht</desc>
-    <category>Wetter</category>
-  </programme>
-  <programme channel="zdf.de" start="$(date -u +'%Y%m%d%H%M%00') +0100" stop="$(date -u -d '+45 minutes' +'%Y%m%d%H%M%00') +0100">
+  <programme channel="zdf.de" start="20250311200000 +0100" stop="20250311202500 +0100">
     <title>heute journal</title>
-    <desc>Nachrichten aus Deutschland und der Welt</desc>
-    <category>Nachrichten</category>
+    <desc>Nachrichten</desc>
   </programme>
-  <programme channel="rtl.de" start="$(date -u +'%Y%m%d%H%M%00') +0100" stop="$(date -u -d '+60 minutes' +'%Y%m%d%H%M%00') +0100">
+  <programme channel="rtl.de" start="20250311200000 +0100" stop="20250311203000 +0100">
     <title>RTL Aktuell</title>
-    <desc>Das aktuelle Nachrichtenmagazin</desc>
-    <category>Nachrichten</category>
+    <desc>Nachrichten</desc>
   </programme>
 </tv>
 EOF
             echo "✅ Dummy-EPG erstellt"
           fi
+      
+      - name: Gesamt-EPG erstellen
+        run: |
+          cd public/epg/de
           
-          # Erstelle gesamt.xml aus allen XML-Dateien
-          echo "🔄 Erstelle gesamt.xml..."
-          
-          # Sammle alle XML-Dateien (außer gesamt.xml selbst)
-          xml_files=$(ls *.xml | grep -v "gesamt.xml" 2>/dev/null || echo "")
+          # Sammle alle XML-Dateien
+          xml_files=$(ls *.xml 2>/dev/null | grep -v "gesamt.xml" | head -20 || echo "")
           
           if [ -n "$xml_files" ]; then
-            # Kopiere erste Datei als Basis
-            first_file=$(echo "$xml_files" | head -1)
-            cp "$first_file" gesamt.xml
+            echo "📄 Gefundene XML-Dateien für gesamt.xml:"
+            echo "$xml_files"
             
-            # Entferne schließenden </tv> Tag
-            sed -i '$d' gesamt.xml
+            # Erstelle gesamt.xml mit Header
+            echo '<?xml version="1.0" encoding="UTF-8"?>' > gesamt.xml
+            echo '<tv>' >> gesamt.xml
             
-            # Füge die anderen Dateien hinzu (ohne Header und Footer)
+            # Extrahiere channels und programmes
             for file in $xml_files; do
-              if [ "$file" != "$first_file" ]; then
-                sed '1d' "$file" | sed '$d' >> gesamt.xml || true
-              fi
+              echo "   ➕ Füge hinzu: $file"
+              # Extrahiere channel Tags
+              sed -n '/<channel/,/<\/channel>/p' "$file" >> gesamt.xml 2>/dev/null || true
+              # Extrahiere programme Tags
+              sed -n '/<programme/,/<\/programme>/p' "$file" >> gesamt.xml 2>/dev/null || true
             done
             
-            # Füge abschließenden </tv> Tag hinzu
-            echo "</tv>" >> gesamt.xml
+            # Schließe tv Tag
+            echo '</tv>' >> gesamt.xml
+            
+            echo "✅ gesamt.xml erstellt"
+            echo "   📦 Größe: $(wc -c < gesamt.xml) Bytes"
+            echo "   📊 Zeilen: $(wc -l < gesamt.xml)"
           else
-            # Falls keine Einzeldateien, verwende dummy.xml als gesamt.xml
-            cp dummy.xml gesamt.xml 2>/dev/null || echo "Keine Dateien verfügbar"
+            echo "⚠️ Keine XML-Dateien für gesamt.xml gefunden"
+            # Kopiere dummy.xml falls vorhanden
+            if [ -f dummy.xml ]; then
+              cp dummy.xml gesamt.xml
+              echo "✅ dummy.xml als gesamt.xml kopiert"
+            fi
           fi
+      
+      - name: Index-Datei erstellen
+        run: |
+          cd public/epg/de
           
-          echo "✅ gesamt.xml erstellt"
-          
-          # Erstelle index.json
-          echo "📊 Erstelle index.json..."
-          
-          # Zähle Kanäle
+          # Zähle Kanäle in gesamt.xml
           if [ -f gesamt.xml ]; then
-            channel_count=$(grep -c "<channel id=" gesamt.xml || echo "0")
+            channel_count=$(grep -c "<channel" gesamt.xml || echo "0")
+            programme_count=$(grep -c "<programme" gesamt.xml || echo "0")
+            file_size=$(wc -c < gesamt.xml || echo "0")
           else
             channel_count=0
+            programme_count=0
+            file_size=0
           fi
           
+          # Erstelle index.json
           cat > index.json << EOF
 {
   "lastUpdate": "$(date -Iseconds)",
   "country": "Deutschland",
   "countryCode": "de",
-  "totalChannels": ${channel_count:-0},
+  "totalChannels": $channel_count,
+  "totalProgrammes": $programme_count,
+  "fileSize": $file_size,
   "channels": [
     {
       "channel": "gesamt",
       "file": "gesamt.xml",
-      "size": $(wc -c < gesamt.xml 2>/dev/null || echo "0")
+      "size": $file_size
     }
   ]
 }
 EOF
-          
           echo "✅ index.json erstellt"
+          cat index.json
       
-      - name: 📋 Zeige generierte Dateien
+      - name: Generierte Dateien anzeigen
         run: |
           echo "📁 Inhalt von public/epg/de/:"
           ls -la public/epg/de/
           
           echo ""
           echo "📄 Erste 500 Zeichen von gesamt.xml:"
-          head -c 500 public/epg/de/gesamt.xml 2>/dev/null || echo "Keine Datei"
-          
-          echo ""
-          echo "📄 index.json:"
-          cat public/epg/de/index.json
+          if [ -f public/epg/de/gesamt.xml ]; then
+            head -c 500 public/epg/de/gesamt.xml
+            echo ""
+          else
+            echo "Keine gesamt.xml vorhanden"
+          fi
       
-      - name: 📤 Nach Cloudflare Pages deployen
+      - name: Nach Cloudflare Pages deployen
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -178,7 +174,7 @@ EOF
           directory: public
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: ✅ Abschluss
+      - name: Abschluss
         run: |
           echo ""
           echo "================================================"
