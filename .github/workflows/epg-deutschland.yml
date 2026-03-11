@@ -59,20 +59,20 @@ jobs:
         run: |
           cd public/epg/de
           cat > index.json << EOF
-      {
-        "lastUpdate": "$(date -Iseconds)",
-        "country": "Deutschland",
-        "countryCode": "de",
-        "totalChannels": $(grep -c '<channel' gesamt.xml),
-        "totalProgrammes": $(grep -c '<programme' gesamt.xml),
-        "channels": [
-          {
-            "channel": "gesamt",
-            "file": "gesamt.xml"
-          }
-        ]
-      }
-      EOF
+{
+  "lastUpdate": "$(date -Iseconds)",
+  "country": "Deutschland",
+  "countryCode": "de",
+  "totalChannels": $(grep -c '<channel' gesamt.xml),
+  "totalProgrammes": $(grep -c '<programme' gesamt.xml),
+  "channels": [
+    {
+      "channel": "gesamt",
+      "file": "gesamt.xml"
+    }
+  ]
+}
+EOF
       
       - name: Deploy zu Cloudflare
         uses: cloudflare/pages-action@v1
