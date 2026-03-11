@@ -11,93 +11,50 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      
-      - name: EPG von verschiedenen Quellen laden
+
+      - name: EPG von weareblahs laden
         run: |
           mkdir -p public/epg/de
-          
-          # Quelle 1: weareblahs/epg (zuverlässig)
-          echo "📡 Lade von weareblahs/epg..."
-          curl -L -o public/epg/de/ard.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ARD.xml" || echo "⚠️ ARD nicht verfügbar"
-          curl -L -o public/epg/de/zdf.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ZDF.xml" || echo "⚠️ ZDF nicht verfügbar"
-          curl -L -o public/epg/de/rtl.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/RTL.xml" || echo "⚠️ RTL nicht verfügbar"
-          curl -L -o public/epg/de/sat1.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/SAT.1.xml" || echo "⚠️ SAT.1 nicht verfügbar"
-          curl -L -o public/epg/de/prosieben.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ProSieben.xml" || echo "⚠️ ProSieben nicht verfügbar"
-          curl -L -o public/epg/de/vox.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/VOX.xml" || echo "⚠️ VOX nicht verfügbar"
-          curl -L -o public/epg/de/kabeleins.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/kabel_eins.xml" || echo "⚠️ kabel eins nicht verfügbar"
-          curl -L -o public/epg/de/rtl2.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/RTL2.xml" || echo "⚠️ RTL2 nicht verfügbar"
-          curl -L -o public/epg/de/superrtl.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/SuperRTL.xml" || echo "⚠️ SuperRTL nicht verfügbar"
-          curl -L -o public/epg/de/ntv.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/n-tv.xml" || echo "⚠️ n-tv nicht verfügbar"
-          curl -L -o public/epg.de/welt.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/WELT.xml" || echo "⚠️ WELT nicht verfügbar"
-          
-          # Quelle 2: iptv-org (falls vorhanden)
-          echo "📡 Lade von iptv-org..."
-          curl -L -o public/epg/de/ard-org.xml "https://iptv-org.github.io/epg/guides/de/ard.iptv-org.xml" || echo "⚠️ iptv-org ARD nicht verfügbar"
-          curl -L -o public/epg/de/zdf-org.xml "https://iptv-org.github.io/epg/guides/de/zdf.iptv-org.xml" || echo "⚠️ iptv-org ZDF nicht verfügbar"
-      
-      - name: Gesamt-EPG erstellen
+          curl -L -o public/epg/de/ard.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ARD.xml" || true
+          curl -L -o public/epg/de/zdf.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ZDF.xml" || true
+          curl -L -o public/epg/de/rtl.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/RTL.xml" || true
+          curl -L -o public/epg/de/sat1.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/SAT.1.xml" || true
+          curl -L -o public/epg/de/prosieben.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ProSieben.xml" || true
+          curl -L -o public/epg/de/vox.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/VOX.xml" || true
+
+      - name: Gesamt-XML erstellen
         run: |
           cd public/epg/de
-          
-          # XML-Header
           echo '<?xml version="1.0" encoding="UTF-8"?>' > gesamt.xml
           echo '<tv>' >> gesamt.xml
-          
-          # Alle XML-Dateien durchgehen
-          channel_count=0
-          programme_count=0
-          
           for file in *.xml; do
             if [ -f "$file" ]; then
-              echo "   ➕ Verarbeite $file"
-              
-              # Channels extrahieren
               sed -n '/<channel/,/<\/channel>/p' "$file" >> gesamt.xml 2>/dev/null || true
-              
-              # Programme extrahieren
               sed -n '/<programme/,/<\/programme>/p' "$file" >> gesamt.xml 2>/dev/null || true
             fi
           done
-          
-          # XML-Footer
           echo '</tv>' >> gesamt.xml
-          
-          # Statistiken
-          channel_count=$(grep -c "<channel" gesamt.xml || echo "0")
-          programme_count=$(grep -c "<programme" gesamt.xml || echo "0")
-          
-          echo "✅ gesamt.xml erstellt"
-          echo "   📺 Kanäle: $channel_count"
-          echo "   📺 Programme: $programme_count"
-          echo "   📦 Größe: $(wc -c < gesamt.xml) Bytes"
-      
+
       - name: Index erstellen
         run: |
           cd public/epg/de
-          
-          channel_count=$(grep -c "<channel" gesamt.xml || echo "0")
-          programme_count=$(grep -c "<programme" gesamt.xml || echo "0")
-          file_size=$(wc -c < gesamt.xml || echo "0")
-          
+          channel_count=$(grep -c "<channel" gesamt.xml 2>/dev/null || echo "0")
+          programme_count=$(grep -c "<programme" gesamt.xml 2>/dev/null || echo "0")
           cat > index.json << EOF
       {
         "lastUpdate": "$(date -Iseconds)",
         "country": "Deutschland",
-        "countryCode": "de",
         "totalChannels": $channel_count,
         "totalProgrammes": $programme_count,
-        "fileSize": $file_size,
         "channels": [
           {
             "channel": "gesamt",
-            "file": "gesamt.xml",
-            "size": $file_size
+            "file": "gesamt.xml"
           }
         ]
       }
       EOF
-          echo "✅ index.json erstellt"
-      
+
       - name: Deploy zu Cloudflare
         uses: cloudflare/pages-action@v1
         with:
