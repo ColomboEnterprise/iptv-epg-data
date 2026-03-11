@@ -1,102 +1,78 @@
-name: EPG Deutschland
+name: EPG für Deutschland generieren
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '0 2 * * *'  # Täglich um 2:00 UTC
+    # Läuft täglich um 2:00 Uhr UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Manueller Start
 
 jobs:
-  generate-epg:
+  generate-german-epg:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
     steps:
-      - name: Repository auschecken
+      - name: 📦 Repository auschecken
         uses: actions/checkout@v3
       
-      - name: EPG laden und aufteilen
+      - name: 🔧 Node.js einrichten
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: 📡 iptv-org/epg klonen
         run: |
-          # Verzeichnis erstellen
+          echo "📡 Klone iptv-org/epg..."
+          git clone --depth 1 https://github.com/iptv-org/epg.git
+          cd epg
+          echo "📦 Installiere Abhängigkeiten..."
+          npm install
+          echo "✅ iptv-org/epg bereit"
+      
+      - name: 🚀 EPG für ARD testen
+        run: |
+          echo "🚀 Teste EPG-Generierung für ARD..."
+          
+          # Ausgabeverzeichnis erstellen
           mkdir -p public/epg/de
           
-          # EPG laden
-          echo "📡 Lade EPG von iptvx.one..."
-          curl -L -o epg.xml.gz "https://iptvx.one/epg/epg.xml.gz"
+          cd epg
           
-          # Entpacken
-          echo "📦 Entpacke EPG..."
-          gunzip -f epg.xml.gz
+          # Nur ARD testen
+          echo "Generiere EPG für ard.de..."
+          npm run grab --- --site=ard.de --output=../public/epg/de/ard.de.xml --days=1
           
-          # Dateigröße anzeigen
-          TOTAL_SIZE=$(wc -c < epg.xml)
-          echo "📊 Gesamtgröße: $(($TOTAL_SIZE / 1024 / 1024)) MB"
+          cd ..
           
-          # XML-Header und Footer
-          echo '<?xml version="1.0" encoding="UTF-8"?><tv>' > header.xml
-          echo '</tv>' > footer.xml
-          
-          # In 50000 Zeilen-Blöcke aufteilen
-          echo "✂️ Teile EPG in kleinere Dateien..."
-          split -l 50000 epg.xml teil_ --additional-suffix=.xml
-          
-          # Teile zählen
-          teile=$(ls teil_*.xml 2>/dev/null | wc -l)
-          echo "📊 $teile Teile werden erstellt"
-          
-          # Jeden Teil verarbeiten
+          echo "✅ Test abgeschlossen"
+      
+      - name: 📊 Index-Datei erstellen
+        run: |
           cd public/epg/de
-          part_num=1
           
-          for file in ../../../teil_*.xml; do
-            if [ -f "$file" ]; then
-              # Header + Inhalt + Footer
-              cat ../../../header.xml "$file" ../../../footer.xml > "epg_teil_$part_num.xml"
-              
-              # Komprimieren
-              gzip -f "epg_teil_$part_num.xml"
-              
-              # Größe anzeigen
-              size=$(wc -c < "epg_teil_$part_num.xml.gz")
-              echo "   ✅ Teil $part_num: $(($size / 1024)) KB"
-              
-              part_num=$((part_num + 1))
-            fi
-          done
-          
-          # Aufräumen
-          rm -f ../../../teil_*.xml ../../../header.xml ../../../footer.xml
-          
-          # Index.json mit allen Teilen erstellen
-          cat > index.json << EOF
-          {
-            "lastUpdate": "$(date -Iseconds)",
-            "country": "Deutschland",
-            "countryCode": "de",
-            "totalParts": $((part_num - 1)),
-            "totalSize": $TOTAL_SIZE,
-            "files": [
-          EOF
-          
-          first=1
-          for i in $(seq 1 $((part_num - 1))); do
-            if [ -f "epg_teil_${i}.xml.gz" ]; then
-              if [ $first -eq 1 ]; then
-                first=0
-              else
-                echo "," >> index.json
-              fi
-              size=$(wc -c < "epg_teil_${i}.xml.gz")
-              echo "    {\"part\": $i, \"file\": \"epg_teil_${i}.xml.gz\", \"size\": $size}" >> index.json
-            fi
-          done
-          
-          echo "  ]}" >> index.json
+          # Prüfe ob Datei existiert
+          if [ -f "ard.de.xml" ]; then
+            echo "✅ ard.de.xml gefunden"
+            
+            # Index.json erstellen (ALLE IN EINER ZEILE!)
+            echo "{\"lastUpdate\":\"$(date -Iseconds)\",\"country\":\"Deutschland\",\"countryCode\":\"de\",\"totalChannels\":1,\"channels\":[{\"channel\":\"ard.de\",\"file\":\"ard.de.xml\"}]}" > index.json
+            
+            echo "✅ index.json erstellt"
+          else
+            echo "⚠️ Keine XML-Datei gefunden"
+            exit 1
+          fi
+      
+      - name: 📋 Generierte Dateien anzeigen
+        run: |
+          echo "📁 Inhalt von public/epg/de/:"
+          ls -la public/epg/de/
           
           echo ""
-          echo "✅ Fertig! Erstellte Dateien:"
-          ls -la
-          
-          cd ../../..
+          echo "📄 Inhalt von index.json:"
+          cat public/epg/de/index.json
       
-      - name: Zu Cloudflare Pages deployen
+      - name: 📤 Nach Cloudflare Pages deployen
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -105,18 +81,15 @@ jobs:
           directory: public
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Abschluss
+      - name: ✅ Abschluss
         run: |
           echo ""
-          echo "=========================================="
-          echo "✅ EPG-Update erfolgreich!"
-          echo "=========================================="
-          echo ""
+          echo "================================================"
+          echo "✅ EPG-Test erfolgreich abgeschlossen!"
+          echo "================================================"
           echo "📊 Verfügbar unter:"
+          echo "   • https://iptv-epg-data.pages.dev/epg/de/ard.de.xml"
           echo "   • https://iptv-epg-data.pages.dev/epg/de/index.json"
-          for i in {1..27}; do
-            echo "   • https://iptv-epg-data.pages.dev/epg/de/epg_teil_${i}.xml.gz"
-          done
           echo ""
-          echo "📦 Gesamtgröße: 708 MB aufgeteilt in 27 Teile"
-          echo "=========================================="
+          echo "⏰ Nächster Schritt: Auf alle Sender erweitern"
+          echo "================================================"
