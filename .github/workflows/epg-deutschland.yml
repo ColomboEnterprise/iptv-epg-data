@@ -1,9 +1,7 @@
-name: EPG Deutschland
+name: EPG
 
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 2 * * *'
+  workflow_dispatch
 
 jobs:
   build:
@@ -11,70 +9,12 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
-      - name: Erstelle Ordner
-        run: mkdir -p public/epg/de
-      
-      - name: Lade EPG von GitHub
+      - name: Erstelle EPG
         run: |
-          # ARD
-          curl -L -o public/epg/de/ard.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ARD.xml" || true
-          # ZDF
-          curl -L -o public/epg/de/zdf.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ZDF.xml" || true
-          # RTL
-          curl -L -o public/epg/de/rtl.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/RTL.xml" || true
-          # Sat.1
-          curl -L -o public/epg/de/sat1.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/SAT.1.xml" || true
-          # ProSieben
-          curl -L -o public/epg/de/prosieben.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ProSieben.xml" || true
-          # VOX
-          curl -L -o public/epg/de/vox.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/VOX.xml" || true
+          mkdir -p public/epg/de
+          echo '{"test":"ok"}' > public/epg/de/index.json
       
-      - name: Kombiniere zu gesamt.xml
-        run: |
-          cd public/epg/de
-          
-          # Header
-          echo '<?xml version="1.0" encoding="UTF-8"?>' > gesamt.xml
-          echo '<tv>' >> gesamt.xml
-          
-          # Alle XML-Dateien durchgehen
-          for file in *.xml; do
-            if [ "$file" != "gesamt.xml" ] && [ -f "$file" ]; then
-              echo "Füge hinzu: $file"
-              # Extrahiere channels und programmes
-              sed -n '/<channel/,/<\/channel>/p' "$file" >> gesamt.xml 2>/dev/null || true
-              sed -n '/<programme/,/<\/programme>/p' "$file" >> gesamt.xml 2>/dev/null || true
-            fi
-          done
-          
-          # Footer
-          echo '</tv>' >> gesamt.xml
-          
-          # Zeige Statistik
-          echo "✅ gesamt.xml erstellt"
-          echo "   Kanäle: $(grep -c '<channel' gesamt.xml)"
-          echo "   Programme: $(grep -c '<programme' gesamt.xml)"
-      
-      - name: Erstelle index.json
-        run: |
-          cd public/epg/de
-          cat > index.json << 'EOF'
-{
-  "lastUpdate": "$(date -Iseconds)",
-  "country": "Deutschland",
-  "countryCode": "de",
-  "totalChannels": 0,
-  "totalProgrammes": 0,
-  "channels": [
-    {
-      "channel": "gesamt",
-      "file": "gesamt.xml"
-    }
-  ]
-}
-EOF
-      
-      - name: Deploy zu Cloudflare
+      - name: Deploy
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
