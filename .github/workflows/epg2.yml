@@ -17,6 +17,7 @@ jobs:
           curl -L -o public/epg/de/ard.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ARD.xml"
           curl -L -o public/epg/de/zdf.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ZDF.xml"
           curl -L -o public/epg/de/rtl.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/RTL.xml"
+          curl -L -o public/epg/de/sat1.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/SAT.1.xml"
       
       - name: Erstelle index
         run: echo '{"test":"ok"}' > public/epg/de/index.json
