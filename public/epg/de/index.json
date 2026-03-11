@@ -1,0 +1,14 @@
+{
+  "lastUpdate": "2026-03-11T16:02:00Z",
+  "country": "Deutschland",
+  "countryCode": "de",
+  "totalChannels": 1,
+  "channels": [
+    {
+      "channel": "gesamt",
+      "file": "gesamt.xml",
+      "name": "Alle deutschen Sender",
+      "size": 12345678
+    }
+  ]
+}
