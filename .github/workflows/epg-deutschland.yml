@@ -1,7 +1,9 @@
-name: EPG
+name: EPG Deutschland
 
 on:
   workflow_dispatch
+  schedule:
+    - cron: '0 2 * * *'
 
 jobs:
   build:
@@ -12,15 +14,67 @@ jobs:
       - name: Erstelle Ordner
         run: mkdir -p public/epg/de
       
-      - name: Erstelle Test-EPG
+      - name: Lade EPG von GitHub
         run: |
-          echo '<?xml version="1.0" encoding="UTF-8"?>' > public/epg/de/gesamt.xml
-          echo '<tv>' >> public/epg/de/gesamt.xml
-          echo '  <channel id="ard.de"><display-name>ARD</display-name></channel>' >> public/epg/de/gesamt.xml
-          echo '  <programme channel="ard.de" start="20250311200000 +0100" stop="20250311201500 +0100"><title>Test</title></programme>' >> public/epg/de/gesamt.xml
-          echo '</tv>' >> public/epg/de/gesamt.xml
+          # ARD
+          curl -L -o public/epg/de/ard.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ARD.xml" || true
+          # ZDF
+          curl -L -o public/epg/de/zdf.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ZDF.xml" || true
+          # RTL
+          curl -L -o public/epg/de/rtl.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/RTL.xml" || true
+          # Sat.1
+          curl -L -o public/epg/de/sat1.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/SAT.1.xml" || true
+          # ProSieben
+          curl -L -o public/epg/de/prosieben.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/ProSieben.xml" || true
+          # VOX
+          curl -L -o public/epg/de/vox.xml "https://raw.githubusercontent.com/weareblahs/epg/main/guides/de/VOX.xml" || true
       
-      - name: Deploy
+      - name: Kombiniere zu gesamt.xml
+        run: |
+          cd public/epg/de
+          
+          # Header
+          echo '<?xml version="1.0" encoding="UTF-8"?>' > gesamt.xml
+          echo '<tv>' >> gesamt.xml
+          
+          # Alle XML-Dateien durchgehen
+          for file in *.xml; do
+            if [ "$file" != "gesamt.xml" ] && [ -f "$file" ]; then
+              echo "Füge hinzu: $file"
+              # Extrahiere channels und programmes
+              sed -n '/<channel/,/<\/channel>/p' "$file" >> gesamt.xml 2>/dev/null || true
+              sed -n '/<programme/,/<\/programme>/p' "$file" >> gesamt.xml 2>/dev/null || true
+            fi
+          done
+          
+          # Footer
+          echo '</tv>' >> gesamt.xml
+          
+          # Zeige Statistik
+          echo "✅ gesamt.xml erstellt"
+          echo "   Kanäle: $(grep -c '<channel' gesamt.xml)"
+          echo "   Programme: $(grep -c '<programme' gesamt.xml)"
+      
+      - name: Erstelle index.json
+        run: |
+          cd public/epg/de
+          cat > index.json << EOF
+      {
+        "lastUpdate": "$(date -Iseconds)",
+        "country": "Deutschland",
+        "countryCode": "de",
+        "totalChannels": $(grep -c '<channel' gesamt.xml),
+        "totalProgrammes": $(grep -c '<programme' gesamt.xml),
+        "channels": [
+          {
+            "channel": "gesamt",
+            "file": "gesamt.xml"
+          }
+        ]
+      }
+      EOF
+      
+      - name: Deploy zu Cloudflare
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
